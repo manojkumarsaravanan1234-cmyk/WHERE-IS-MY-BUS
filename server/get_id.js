@@ -1,0 +1,1 @@
+const m=require('mongoose');const R=require('./models/Route');require('dotenv').config();m.connect(process.env.MONGODB_URI).then(async()=>{const r=await R.findOne().sort({_id:-1});require('fs').writeFileSync('rid.txt',r?r._id.toString():'NONE');process.exit(0)}).catch(e=>{require('fs').writeFileSync('rid.txt',e.toString());process.exit(1)});
