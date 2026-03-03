@@ -5,15 +5,20 @@
  */
 exports.loginAdmin = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        let { email, password } = req.body;
 
-        // Check against environment variables for simplicity & security
-        const adminEmail = process.env.ADMIN_EMAIL || 'universeboss333@gmail.com';
-        const adminPassword = process.env.ADMIN_PASSWORD || 'universeboss6374';
+        // Trim inputs to avoid accidental spaces
+        email = email ? email.trim() : '';
+        password = password ? password.trim() : '';
 
-        if (email === adminEmail && password === adminPassword) {
-            // In a real app, generate a JWT token here
-            // For now, return a simple success flag and user data
+        // Check against environment variables
+        const adminEmail = (process.env.ADMIN_EMAIL || 'universeboss333@gmail.com').trim();
+        const adminPassword = (process.env.ADMIN_PASSWORD || 'universeboss6374').trim();
+
+        console.log(`🔐 Login attempt for: ${email}`);
+
+        if (email.toLowerCase() === adminEmail.toLowerCase() && password === adminPassword) {
+            console.log('✅ Login successful');
             res.status(200).json({
                 success: true,
                 message: 'Login successful',
@@ -24,6 +29,7 @@ exports.loginAdmin = async (req, res) => {
                 }
             });
         } else {
+            console.log('❌ Login failed: Invalid credentials');
             res.status(401).json({
                 success: false,
                 message: 'Invalid email or password'
