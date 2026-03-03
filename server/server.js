@@ -13,102 +13,54 @@ const app = express();
 const server = http.createServer(app);
 
 // Initialize Socket.io with CORS
+// Note: Socket.io has limited support on Vercel Serverless Functions
 const io = new Server(server, {
     cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:5173',
+        origin: process.env.CLIENT_URL || '*',
         methods: ['GET', 'POST'],
         credentials: true,
     },
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    transports: ['websocket', 'polling'],
 });
 
 // Initialize Supabase
-connectDB();
+connectDB().catch(err => console.error('Supabase Init Error:', err));
 
 // Middleware
-app.use(helmet()); // Security headers
-app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    credentials: true,
-}));
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(helmet({ contentSecurityPolicy: false })); // Permissive CSP for development
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Logging (only in development)
+// Logging
 if (process.env.NODE_ENV === 'development') {
     app.use(morgan('dev'));
 }
 
-// Make io accessible to routes (optional)
-app.set('io', io);
-
 // Routes
 app.use('/api/routes', require('./routes/routeRoutes'));
 app.use('/api/buses', require('./routes/busRoutes'));
-app.use('/api/auth', require('./routes/authRoutes')); // NEW: Auth Routes
+app.use('/api/auth', require('./routes/authRoutes'));
 
-// Health check endpoint
+// Health check
 app.get('/health', (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: 'Server is running',
-        timestamp: new Date().toISOString(),
-    });
+    res.status(200).json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Root endpoint
 app.get('/', (req, res) => {
-    res.json({
-        message: '🚌 WhereIsMyBus API Server',
-        version: '1.0.0',
-        endpoints: {
-            routes: '/api/routes',
-            buses: '/api/buses',
-            auth: '/api/auth',
-            health: '/health',
-        },
-    });
+    res.send('🚌 WhereIsMyBus API is live!');
 });
 
-// 404 Handler
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Route not found',
-    });
-});
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-    console.error('❌ Error:', err.stack);
-    res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Internal Server Error',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-    });
-});
-
-// Initialize Socket.io handlers
+// Socket.io handlers
 socketHandlers(io);
 
-// Start server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    console.log('\n' + '='.repeat(50));
-    console.log('🚌 WhereIsMyBus Server Started');
-    console.log('='.repeat(50));
-    console.log(`📡 Server running on: http://localhost:${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔌 Socket.io ready for connections`);
-    console.log('='.repeat(50) + '\n');
-});
+// Start server (Only if not running on Vercel)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    const PORT = process.env.PORT || 5000;
+    server.listen(PORT, () => {
+        console.log(`📡 Server running on port ${PORT}`);
+    });
+}
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-    console.error('❌ Unhandled Promise Rejection:', err);
-    // Close server & exit process
-    server.close(() => process.exit(1));
-});
-
-module.exports = { app, server, io };
+// Export for Vercel
+module.exports = server;
