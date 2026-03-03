@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const connectDB = require('./config/database');
+const { connectDB } = require('./config/database');
 const socketHandlers = require('./sockets/socketHandlers');
 
 // Initialize Express app
@@ -23,7 +23,7 @@ const io = new Server(server, {
     pingInterval: 25000,
 });
 
-// Connect to MongoDB
+// Initialize Supabase
 connectDB();
 
 // Middleware

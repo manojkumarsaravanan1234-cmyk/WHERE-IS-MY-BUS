@@ -1,5 +1,4 @@
-const Bus = require('../models/Bus');
-const Route = require('../models/Route');
+const { supabase } = require('../config/database');
 
 /**
  * Socket.io Event Handlers
@@ -20,339 +19,228 @@ module.exports = (io) => {
 
         /**
          * Event: driver:startJourney
-         * Emitted when a driver starts tracking a bus
          * Payload: { busNumber, routeId, driverName, driverPhone }
          */
         socket.on('driver:startJourney', async (data) => {
             try {
                 const { busNumber, routeId, driverName, driverPhone } = data;
+                const formattedBusNumber = busNumber.toUpperCase();
 
-                console.log(`🚌 Driver starting journey: Bus ${busNumber} on route ${routeId}`);
+                console.log(`🚌 Driver starting journey: Bus ${formattedBusNumber} on route ${routeId}`);
 
-                // Find or create the bus
-                let bus = await Bus.findOne({ busNumber: busNumber.toUpperCase() });
+                // Update or Insert bus
+                const { data: busData, error: findError } = await supabase
+                    .from('buses')
+                    .select('*')
+                    .eq('bus_number', formattedBusNumber)
+                    .single();
 
-                if (!bus) {
-                    // Create new bus if doesn't exist
-                    bus = new Bus({
-                        busNumber: busNumber.toUpperCase(),
-                    });
+                let result;
+                if (!busData) {
+                    const { data: insertData, error: insertError } = await supabase
+                        .from('buses')
+                        .insert([
+                            {
+                                bus_number: formattedBusNumber,
+                                route_id: routeId,
+                                is_active: true,
+                                driver_info: { name: driverName, phone: driverPhone, socketId: socket.id },
+                                last_updated: new Date().toISOString()
+                            }
+                        ])
+                        .select()
+                        .single();
+                    if (insertError) throw insertError;
+                    result = insertData;
+                } else {
+                    const { data: updateData, error: updateError } = await supabase
+                        .from('buses')
+                        .update({
+                            route_id: routeId,
+                            is_active: true,
+                            driver_info: { ...busData.driver_info, name: driverName, phone: driverPhone, socketId: socket.id },
+                            last_updated: new Date().toISOString()
+                        })
+                        .eq('bus_number', formattedBusNumber)
+                        .select()
+                        .single();
+                    if (updateError) throw updateError;
+                    result = updateData;
                 }
 
-                // Update driver info
-                if (driverName) bus.driverInfo.name = driverName;
-                if (driverPhone) bus.driverInfo.phone = driverPhone;
-
-                // Start journey
-                await bus.startJourney(routeId, socket.id);
-
                 // Store active driver
-                activeDrivers.set(busNumber.toUpperCase(), socket.id);
+                activeDrivers.set(formattedBusNumber, socket.id);
 
-                // Join a room for this bus (for targeted broadcasting)
-                socket.join(`bus:${busNumber.toUpperCase()}`);
+                // Join rooms
+                socket.join(`bus:${formattedBusNumber}`);
                 socket.join(`route:${routeId}`);
 
-                // Notify all users tracking this route
+                // Notify users
                 io.to(`route:${routeId}`).emit('bus:joined', {
-                    busNumber: bus.busNumber,
-                    routeId: bus.routeId,
+                    busNumber: formattedBusNumber,
+                    routeId: routeId,
                     timestamp: Date.now(),
                 });
 
-                // Acknowledge to driver
+                // Acknowledge
                 socket.emit('journey:started', {
                     success: true,
-                    busNumber: bus.busNumber,
-                    routeId: bus.routeId,
+                    busNumber: formattedBusNumber,
+                    routeId: routeId,
                 });
 
-                console.log(`✅ Journey started: Bus ${bus.busNumber}`);
+                console.log(`✅ Journey started: Bus ${formattedBusNumber}`);
             } catch (error) {
                 console.error('❌ Error starting journey:', error);
-                socket.emit('error', {
-                    message: 'Failed to start journey',
-                    error: error.message,
-                });
+                socket.emit('error', { message: 'Failed to start journey', error: error.message });
             }
         });
 
         /**
          * Event: driver:updateLocation
-         * Emitted every 5 seconds by the driver app with GPS data
-         * Payload: { busNumber, longitude, latitude, speed, heading, accuracy }
+         * Payload: { busNumber, longitude, latitude, speed, heading }
          */
         socket.on('driver:updateLocation', async (data) => {
             try {
-                const { busNumber, longitude, latitude, speed, heading, accuracy } = data;
+                const { busNumber, longitude, latitude, speed, heading } = data;
+                const formattedBusNumber = busNumber.toUpperCase();
 
-                // Validate coordinates
-                if (
-                    typeof longitude !== 'number' ||
-                    typeof latitude !== 'number' ||
-                    longitude < -180 ||
-                    longitude > 180 ||
-                    latitude < -90 ||
-                    latitude > 90
-                ) {
-                    socket.emit('error', { message: 'Invalid coordinates' });
-                    return;
-                }
+                // Simple validation
+                if (typeof longitude !== 'number' || typeof latitude !== 'number') return;
 
-                // Find the bus
-                const bus = await Bus.findOne({ busNumber: busNumber.toUpperCase() }).populate('routeId');
+                // Update in Supabase
+                const { data: bus, error } = await supabase
+                    .from('buses')
+                    .update({
+                        current_location: { coordinates: [longitude, latitude] },
+                        speed: speed || 0,
+                        heading: heading || 0,
+                        last_updated: new Date().toISOString()
+                    })
+                    .eq('bus_number', formattedBusNumber)
+                    .select('*, routes(*)')
+                    .single();
 
-                if (!bus) {
-                    socket.emit('error', { message: 'Bus not found' });
-                    return;
-                }
+                if (error || !bus) return;
 
-                // Update location
-                await bus.updateLocation(longitude, latitude, speed || 0, heading || 0);
-
-                // Prepare broadcast data
                 const locationUpdate = {
-                    busNumber: bus.busNumber,
-                    location: {
-                        type: 'Point',
-                        coordinates: [longitude, latitude],
-                    },
+                    busNumber: formattedBusNumber,
+                    location: { type: 'Point', coordinates: [longitude, latitude] },
                     speed: speed || 0,
                     heading: heading || 0,
-                    accuracy: accuracy || null,
                     timestamp: Date.now(),
-                    routeId: bus.routeId?._id,
-                    routeName: bus.routeId?.routeName,
+                    routeId: bus.route_id,
+                    routeName: bus.routes?.route_name,
                 };
 
-                // Calculate ETA to next stop (if route exists)
-                if (bus.routeId && bus.routeId.stops && bus.routeId.stops.length > 0) {
-                    const nextStopIndex = bus.currentStopIndex || 0;
-                    if (nextStopIndex < bus.routeId.stops.length) {
-                        const nextStop = bus.routeId.stops[nextStopIndex];
-                        const distance = calculateDistance(
-                            latitude,
-                            longitude,
-                            nextStop.coordinates.coordinates[1],
-                            nextStop.coordinates.coordinates[0]
-                        );
-
-                        // ETA in minutes (assuming average speed of 30 km/h if speed is 0)
-                        const effectiveSpeed = speed > 5 ? speed : 30;
-                        const eta = Math.round((distance / effectiveSpeed) * 60);
-
-                        locationUpdate.nextStop = {
-                            name: nextStop.name,
-                            distance: distance.toFixed(2), // km
-                            eta: eta, // minutes
-                        };
-                    }
+                // Broadcast
+                if (bus.route_id) {
+                    io.to(`route:${bus.route_id}`).emit('bus:locationUpdate', locationUpdate);
                 }
+                io.to(`bus:${formattedBusNumber}`).emit('bus:locationUpdate', locationUpdate);
 
-                // Broadcast to all users tracking this route
-                if (bus.routeId) {
-                    io.to(`route:${bus.routeId._id}`).emit('bus:locationUpdate', locationUpdate);
-                }
-
-                // Also broadcast to general bus watchers
-                io.to(`bus:${bus.busNumber}`).emit('bus:locationUpdate', locationUpdate);
-
-                // Optional: Log every 10th update to avoid console spam
-                if (Math.random() < 0.1) {
-                    console.log(
-                        `📍 Location update: Bus ${bus.busNumber} at [${latitude.toFixed(4)}, ${longitude.toFixed(4)}]`
-                    );
-                }
             } catch (error) {
                 console.error('❌ Error updating location:', error);
-                socket.emit('error', {
-                    message: 'Failed to update location',
-                    error: error.message,
-                });
             }
         });
 
         /**
          * Event: driver:stopJourney
-         * Emitted when driver ends the journey
-         * Payload: { busNumber }
          */
         socket.on('driver:stopJourney', async (data) => {
             try {
                 const { busNumber } = data;
+                const formattedBusNumber = busNumber.toUpperCase();
 
-                console.log(`🛑 Driver stopping journey: Bus ${busNumber}`);
+                const { data: bus, error } = await supabase
+                    .from('buses')
+                    .update({ is_active: false, last_updated: new Date().toISOString() })
+                    .eq('bus_number', formattedBusNumber)
+                    .select()
+                    .single();
 
-                const bus = await Bus.findOne({ busNumber: busNumber.toUpperCase() });
+                if (error || !bus) return;
 
-                if (!bus) {
-                    socket.emit('error', { message: 'Bus not found' });
-                    return;
-                }
-
-                const routeId = bus.routeId;
-
-                // Stop journey
-                await bus.stopJourney();
-
-                // Remove from active drivers
-                activeDrivers.delete(busNumber.toUpperCase());
-
-                // Leave rooms
-                socket.leave(`bus:${busNumber.toUpperCase()}`);
-                if (routeId) {
-                    socket.leave(`route:${routeId}`);
-
-                    // Notify users
-                    io.to(`route:${routeId}`).emit('bus:left', {
-                        busNumber: bus.busNumber,
-                        routeId: routeId,
+                activeDrivers.delete(formattedBusNumber);
+                socket.leave(`bus:${formattedBusNumber}`);
+                if (bus.route_id) {
+                    socket.leave(`route:${bus.route_id}`);
+                    io.to(`route:${bus.route_id}`).emit('bus:left', {
+                        busNumber: formattedBusNumber,
+                        routeId: bus.route_id,
                         timestamp: Date.now(),
                     });
                 }
 
-                socket.emit('journey:stopped', {
-                    success: true,
-                    busNumber: bus.busNumber,
-                });
-
-                console.log(`✅ Journey stopped: Bus ${bus.busNumber}`);
+                socket.emit('journey:stopped', { success: true, busNumber: formattedBusNumber });
             } catch (error) {
                 console.error('❌ Error stopping journey:', error);
-                socket.emit('error', {
-                    message: 'Failed to stop journey',
-                    error: error.message,
-                });
             }
         });
 
         /**
          * USER EVENTS
          */
-
-        /**
-         * Event: user:trackRoute
-         * Emitted when a user wants to track buses on a specific route
-         * Payload: { routeId, userId }
-         */
         socket.on('user:trackRoute', async (data) => {
             try {
                 const { routeId, userId } = data;
-
-                console.log(`👤 User ${userId || socket.id} tracking route ${routeId}`);
-
-                // Join the route room
                 socket.join(`route:${routeId}`);
-
-                // Store user tracking info
                 activeUsers.set(socket.id, { routeId, userId });
 
-                // Get all active buses on this route
-                const buses = await Bus.find({
-                    routeId,
-                    isActive: true,
-                }).populate('routeId');
+                const { data: buses, error } = await supabase
+                    .from('buses')
+                    .select('*')
+                    .eq('route_id', routeId)
+                    .eq('is_active', true);
 
-                // Send current bus positions to the user
+                if (error) throw error;
+
                 socket.emit('route:activeBuses', {
                     routeId,
-                    buses: buses.map((bus) => ({
-                        busNumber: bus.busNumber,
-                        location: bus.currentLocation,
+                    buses: buses.map(bus => ({
+                        busNumber: bus.bus_number,
+                        location: bus.current_location,
                         speed: bus.speed,
                         heading: bus.heading,
-                        lastUpdated: bus.lastUpdated,
+                        lastUpdated: bus.last_updated,
                     })),
                 });
-
-                console.log(`✅ User tracking route ${routeId}, found ${buses.length} active buses`);
             } catch (error) {
                 console.error('❌ Error tracking route:', error);
-                socket.emit('error', {
-                    message: 'Failed to track route',
-                    error: error.message,
-                });
             }
         });
 
-        /**
-         * Event: user:stopTracking
-         * Emitted when user stops tracking a route
-         * Payload: { routeId }
-         */
         socket.on('user:stopTracking', (data) => {
-            const { routeId } = data;
-            socket.leave(`route:${routeId}`);
+            socket.leave(`route:${data.routeId}`);
             activeUsers.delete(socket.id);
-            console.log(`👤 User stopped tracking route ${routeId}`);
         });
 
         /**
-         * DISCONNECT EVENT
-         * Handle cleanup when a client disconnects
+         * DISCONNECT
          */
         socket.on('disconnect', async () => {
-            console.log(`🔌 Client disconnected: ${socket.id}`);
-
-            // Check if this was a driver
             for (const [busNumber, socketId] of activeDrivers.entries()) {
                 if (socketId === socket.id) {
-                    try {
-                        const bus = await Bus.findOne({ busNumber });
-                        if (bus) {
-                            await bus.stopJourney();
-                            console.log(`🛑 Auto-stopped journey for bus ${busNumber} due to disconnect`);
-
-                            if (bus.routeId) {
-                                io.to(`route:${bus.routeId}`).emit('bus:left', {
-                                    busNumber: bus.busNumber,
-                                    routeId: bus.routeId,
-                                    timestamp: Date.now(),
-                                    reason: 'disconnect',
-                                });
-                            }
-                        }
-                        activeDrivers.delete(busNumber);
-                    } catch (error) {
-                        console.error(`❌ Error during disconnect cleanup: ${error.message}`);
-                    }
+                    await supabase
+                        .from('buses')
+                        .update({ is_active: false, last_updated: new Date().toISOString() })
+                        .eq('bus_number', busNumber);
+                    activeDrivers.delete(busNumber);
                     break;
                 }
             }
-
-            // Remove user tracking
             activeUsers.delete(socket.id);
         });
     });
 
-    // Periodic cleanup of inactive buses (every 5 minutes)
+    // Simple cleanup every 5 mins
     setInterval(async () => {
-        try {
-            const staleTime = Date.now() - 10 * 60 * 1000; // 10 minutes ago
-            const staleBuses = await Bus.find({
-                isActive: true,
-                lastUpdated: { $lt: new Date(staleTime) },
-            });
-
-            for (const bus of staleBuses) {
-                await bus.stopJourney();
-                console.log(`🧹 Auto-deactivated stale bus: ${bus.busNumber}`);
-
-                if (bus.routeId) {
-                    io.to(`route:${bus.routeId}`).emit('bus:left', {
-                        busNumber: bus.busNumber,
-                        routeId: bus.routeId,
-                        timestamp: Date.now(),
-                        reason: 'inactive',
-                    });
-                }
-            }
-        } catch (error) {
-            console.error('❌ Error in cleanup task:', error);
-        }
-    }, 5 * 60 * 1000); // Every 5 minutes
-
-    console.log('✅ Socket.io handlers initialized');
+        const staleTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        await supabase
+            .from('buses')
+            .update({ is_active: false })
+            .lt('last_updated', staleTime);
+    }, 5 * 60 * 1000);
 };
 
 /**

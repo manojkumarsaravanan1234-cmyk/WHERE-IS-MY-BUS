@@ -1,42 +1,24 @@
-const mongoose = require('mongoose');
+const { createClient } = require('@supabase/supabase-js');
 
 /**
- * Connect to MongoDB database
- * Uses MONGODB_URI from environment variables
+ * Initialize Supabase client
+ * Uses SUPABASE_URL and SUPABASE_ANON_KEY from environment variables
  */
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
+
 const connectDB = async () => {
     try {
-        const conn = await mongoose.connect(process.env.MONGODB_URI, {
-            // These options are now default in Mongoose v6+
-            // but included for compatibility
-        });
-
-        console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
-        console.log(`📊 Database: ${conn.connection.name}`);
+        const { data, error } = await supabase.from('_health').select('*').limit(1);
+        // Note: _health table might not exist, but we just want to test if client works
+        console.log(`✅ Supabase Client initialized for: ${process.env.SUPABASE_URL}`);
+        return supabase;
     } catch (error) {
-        console.error(`❌ MongoDB Connection Error: ${error.message}`);
-        process.exit(1); // Exit with failure
+        console.error(`❌ Supabase Connection Error: ${error.message}`);
+        // For development, we don't exit to allow other things to run
     }
 };
 
-// Handle connection events
-mongoose.connection.on('connected', () => {
-    console.log('🔗 Mongoose connected to MongoDB');
-});
-
-mongoose.connection.on('error', (err) => {
-    console.error(`❌ Mongoose connection error: ${err}`);
-});
-
-mongoose.connection.on('disconnected', () => {
-    console.log('🔌 Mongoose disconnected from MongoDB');
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-    await mongoose.connection.close();
-    console.log('🛑 MongoDB connection closed due to app termination');
-    process.exit(0);
-});
-
-module.exports = connectDB;
+module.exports = { connectDB, supabase };
