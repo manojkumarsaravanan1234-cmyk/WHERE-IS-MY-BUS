@@ -1,0 +1,28 @@
+Checking columns for table: routes
+(node:3016) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and HTTPS requests insecure by disabling certificate verification.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Γ¥î estimated_duration: column routes.estimated_duration does not exist (42703)
+Γ¥î estimatedDuration: column routes.estimatedDuration does not exist (42703)
+Γ¥î estimated_time: column routes.estimated_time does not exist (42703)
+Γ¥î estimatedTime: column routes.estimatedTime does not exist (42703)
+Γ¥î duration: column routes.duration does not exist (42703)
+Γ£à route_name: Exists
+Γ¥î routeName: column routes.routeName does not exist (42703)
+Γ£à route_number: Exists
+Γ¥î routeNumber: column routes.routeNumber does not exist (42703)
+Γ£à is_active: Exists
+Γ¥î isActive: column routes.isActive does not exist (42703)
+Γ£à distance: Exists
+Γ£à source: Exists
+Γ£à destination: Exists
+Γ£à stops: Exists
+
+Checking columns for table: buses
+Γ£à bus_number: Exists
+Γ£à route_id: Exists
+Γ£à is_active: Exists
+Γ£à current_location: Exists
+Γ£à speed: Exists
+Γ£à heading: Exists
+Γ£à last_updated: Exists
+Γ£à driver_info: Exists

@@ -28,7 +28,12 @@ exports.getAllBuses = async (req, res) => {
         const buses = data.map(bus => ({
             ...bus,
             _id: bus.id,
-            routeId: bus.routes ? { ...bus.routes, _id: bus.routes.id } : null
+            routeId: bus.routes ? {
+                ...bus.routes,
+                _id: bus.routes.id,
+                routeName: bus.routes.route_name,
+                routeNumber: bus.routes.route_number
+            } : null
         }));
 
         res.status(200).json({
@@ -69,7 +74,12 @@ exports.getBusByNumber = async (req, res) => {
         const bus = {
             ...data,
             _id: data.id,
-            routeId: data.routes ? { ...data.routes, _id: data.routes.id } : null
+            routeId: data.routes ? {
+                ...data.routes,
+                _id: data.routes.id,
+                routeName: data.routes.route_name,
+                routeNumber: data.routes.route_number
+            } : null
         };
 
         res.status(200).json({
@@ -111,6 +121,7 @@ exports.createBus = async (req, res) => {
                     bus_number: formattedBusNumber,
                     route_id: routeId || null,
                     driver_info: driverInfo || {},
+                    is_active: false
                 },
             ])
             .select()
@@ -137,6 +148,8 @@ exports.createBus = async (req, res) => {
             success: false,
             message: 'Error creating bus',
             error: error.message,
+            details: error.details,
+            hint: error.hint
         });
     }
 };
@@ -307,7 +320,12 @@ exports.findNearbyBuses = async (req, res) => {
         const buses = data.map(bus => ({
             ...bus,
             _id: bus.id,
-            routeId: bus.routes ? { ...bus.routes, _id: bus.routes.id } : null
+            routeId: bus.routes ? {
+                ...bus.routes,
+                _id: bus.routes.id,
+                routeName: bus.routes.route_name,
+                routeNumber: bus.routes.route_number
+            } : null
         }));
 
         res.status(200).json({

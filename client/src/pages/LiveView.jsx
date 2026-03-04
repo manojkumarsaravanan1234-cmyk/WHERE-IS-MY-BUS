@@ -278,6 +278,7 @@ const LiveView = () => {
                     buses={buses}
                     routeCoordinates={routeGeometry.length > 0 ? routeGeometry : route?.stops?.map(s => [s.coordinates.coordinates[1], s.coordinates.coordinates[0]])}
                     userLocation={userLocation}
+                    stops={route?.stops}
                 />
             </div>
 
@@ -361,11 +362,27 @@ const LiveView = () => {
 
                             <div className="space-y-3">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-500"></div>
-                                    <p className="text-xs text-slate-400">Next stop: <span className="text-white font-bold">{bus.nextStop?.name || '---'}</span></p>
+                                    <div className="w-4 h-4 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Next Stop</p>
+                                        <div className="flex justify-between items-center">
+                                            <p className="text-sm font-bold text-white">{bus.nextStop?.name || '---'}</p>
+                                            {bus.nextStop && (
+                                                <span className="text-[10px] text-indigo-400 font-bold">
+                                                    {calculateDistance(
+                                                        bus.location.coordinates[1], bus.location.coordinates[0],
+                                                        bus.nextStop.coordinates.coordinates ? bus.nextStop.coordinates.coordinates[1] : bus.nextStop.coordinates[1],
+                                                        bus.nextStop.coordinates.coordinates ? bus.nextStop.coordinates.coordinates[0] : bus.nextStop.coordinates[0]
+                                                    ).toFixed(1)} km
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-indigo-500 animate-pulse-slow" style={{ width: '65%' }}></div>
+                                <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse-slow transition-all duration-500" style={{ width: bus.nextStop ? '65%' : '0%' }}></div>
                                 </div>
                             </div>
                         </div>
@@ -412,17 +429,29 @@ const LiveView = () => {
                         {/* 1. Select Stop */}
                         <div className="mb-8">
                             <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3 block">Trigger Location</label>
-                            <div className="max-h-40 overflow-y-auto rounded-2xl border border-white/5 bg-slate-950/50 p-1">
-                                {route?.stops.length > 0 ? route.stops.map((stop, idx) => (
-                                    <button
-                                        key={idx}
-                                        onClick={() => setTargetStop(stop)}
-                                        className={`w-full text-left p-3 rounded-xl text-sm font-bold transition-all flex justify-between items-center ${targetStop?.name === stop.name ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'hover:bg-white/5 text-slate-400'}`}
-                                    >
-                                        {stop.name}
-                                        {targetStop?.name === stop.name && <span>✓</span>}
-                                    </button>
-                                )) : <p className="p-3 text-slate-600">No stops available.</p>}
+                            <div className="max-h-52 overflow-y-auto rounded-2xl border border-white/5 bg-slate-950/50 p-1 custom-scrollbar">
+                                {(() => {
+                                    const allStops = [];
+                                    if (route?.source) allStops.push({ ...route.source, type: 'Source', isSpecial: true });
+                                    if (route?.stops) allStops.push(...route.stops.map(s => ({ ...s, type: 'Stop' })));
+                                    if (route?.destination) allStops.push({ ...route.destination, type: 'Destination', isSpecial: true });
+
+                                    return allStops.length > 0 ? allStops.map((stop, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setTargetStop(stop)}
+                                            className={`w-full text-left p-3 rounded-xl transition-all flex justify-between items-center mb-1 ${targetStop?.name === stop.name ? 'bg-indigo-600 shadow-lg shadow-indigo-600/40 text-white' : 'hover:bg-white/5 text-slate-400'}`}
+                                        >
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-black">{stop.name}</span>
+                                                <span className={`text-[8px] uppercase tracking-tighter ${targetStop?.name === stop.name ? 'text-indigo-200' : 'text-slate-600'}`}>
+                                                    {stop.type}
+                                                </span>
+                                            </div>
+                                            {targetStop?.name === stop.name && <span className="text-xs">✓</span>}
+                                        </button>
+                                    )) : <p className="p-3 text-slate-600 text-xs text-center italic">No stops available.</p>;
+                                })()}
                             </div>
                         </div>
 

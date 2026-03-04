@@ -1,0 +1,17 @@
+--- Testing Minimal Insert into routes ---
+(node:20764) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and HTTPS requests insecure by disabling certificate verification.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Γ£à Insert Successful!
+Inserted Data: [
+  {
+    id: '6f0fd37a-8284-49f3-8015-2d231a331dff',
+    route_name: 'Minimal Route',
+    route_number: 'MIN-874',
+    source: { name: 'S', coordinates: [Array] },
+    destination: { name: 'D', coordinates: [Array] },
+    stops: [],
+    distance: 0,
+    is_active: true,
+    created_at: '2026-03-04T08:57:47.360012+00:00'
+  }
+]

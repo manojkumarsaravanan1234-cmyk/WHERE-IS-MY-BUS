@@ -4,33 +4,36 @@ import authAPI from '../services/auth';
 
 const Login = () => {
     const navigate = useNavigate();
+    const [isLogin, setIsLogin] = useState(true);
     const [role, setRole] = useState('user'); // 'user' | 'driver' | 'admin'
-    const [credentials, setCredentials] = useState({ email: '', password: '' });
+    const [formData, setFormData] = useState({ name: '', email: '', password: '' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
     const handleChange = (e) => {
-        setCredentials({ ...credentials, [e.target.name]: e.target.value });
+        setFormData({ ...formData, [e.target.name]: e.target.value });
         setError('');
     };
 
-    const handleLogin = async (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
-            await authAPI.login(credentials.email, credentials.password);
-
-            if (role === 'admin') navigate('/admin');
-            else if (role === 'driver') navigate('/driver');
-            else navigate('/');
-
+            if (isLogin) {
+                const response = await authAPI.login(formData.email, formData.password);
+                if (response.user.role === 'admin') navigate('/admin');
+                else if (response.user.role === 'driver') navigate('/driver');
+                else navigate('/');
+            } else {
+                await authAPI.signup({ ...formData, role });
+                setIsLogin(true);
+                setError('Registration successful! Please login.');
+                // Clear password for security
+                setFormData({ ...formData, password: '' });
+            }
         } catch (err) {
             console.error(err);
-            if (role === 'user') {
-                navigate('/');
-            } else {
-                setError('Invalid credentials');
-            }
+            setError(err.response?.data?.message || 'Authentication failed');
         } finally {
             setLoading(false);
         }
@@ -50,42 +53,60 @@ const Login = () => {
                         <div className="w-16 h-16 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-500/40 mx-auto mb-6">
                             <span className="text-3xl font-black text-white">B</span>
                         </div>
-                        <h1 className="text-4xl font-black text-white mb-2 tracking-tighter uppercase italic">Secure Access</h1>
+                        <h1 className="text-4xl font-black text-white mb-2 tracking-tighter uppercase italic">
+                            {isLogin ? 'Secure Access' : 'Create Identity'}
+                        </h1>
                         <p className="text-slate-400 font-medium">Connect to the tracking grid.</p>
                     </div>
 
-                    {/* Role Selector */}
-                    <div className="flex bg-slate-900/50 p-1 rounded-2xl mb-10 border border-white/5">
-                        {['user', 'driver', 'admin'].map((r) => (
-                            <button
-                                key={r}
-                                onClick={() => setRole(r)}
-                                className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${role === r ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300'}`}
-                            >
-                                {r}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Role Selector (Only for Signup) */}
+                    {!isLogin && (
+                        <div className="flex bg-slate-900/50 p-1 rounded-2xl mb-10 border border-white/5">
+                            {['user', 'driver'].map((r) => (
+                                <button
+                                    key={r}
+                                    type="button"
+                                    onClick={() => setRole(r)}
+                                    className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${role === r ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    {r}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Form */}
-                    <form onSubmit={handleLogin} className="space-y-6">
+                    <form onSubmit={handleSubmit} className="space-y-6">
                         {error && (
-                            <div className="alert-glass text-rose-300 p-4 rounded-xl text-sm font-bold flex items-center gap-3">
-                                <span className="text-lg">⚠️</span> {error}
+                            <div className={`p-4 rounded-xl text-sm font-bold flex items-center gap-3 ${error.includes('successful') ? 'bg-emerald-500/10 text-emerald-400' : 'alert-glass text-rose-300'}`}>
+                                <span className="text-lg">{error.includes('successful') ? '✅' : '⚠️'}</span> {error}
                             </div>
                         )}
 
                         <div className="space-y-5">
+                            {!isLogin && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1 block">Display Name</label>
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        value={formData.name}
+                                        onChange={handleChange}
+                                        placeholder="Major Tom"
+                                        className="glass-input w-full py-4 px-5 text-sm"
+                                        required
+                                    />
+                                </div>
+                            )}
+
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1 block">
-                                    {role === 'user' ? 'Identity' : 'Portal ID'}
-                                </label>
+                                <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1 block">Email Address</label>
                                 <input
-                                    type={role === 'user' ? "text" : "email"}
+                                    type="email"
                                     name="email"
-                                    value={credentials.email}
+                                    value={formData.email}
                                     onChange={handleChange}
-                                    placeholder={role === 'user' ? "Enter username" : "admin@nexus.com"}
+                                    placeholder="operator@nexus.com"
                                     className="glass-input w-full py-4 px-5 text-sm"
                                     required
                                 />
@@ -96,7 +117,7 @@ const Login = () => {
                                 <input
                                     type="password"
                                     name="password"
-                                    value={credentials.password}
+                                    value={formData.password}
                                     onChange={handleChange}
                                     placeholder="••••••••"
                                     className="glass-input w-full py-4 px-5 text-sm"
@@ -108,23 +129,27 @@ const Login = () => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className={`glass-button w-full py-5 text-sm font-black uppercase tracking-widest mt-10 shadow-2xl 
-                                ${role === 'admin' ? 'from-rose-500 to-purple-600 shadow-rose-500/20' :
-                                    role === 'driver' ? 'from-emerald-500 to-teal-600 shadow-emerald-500/20' :
-                                        'from-indigo-500 to-blue-600 shadow-indigo-500/20'}`}
+                            className={`glass-button w-full py-5 text-sm font-black uppercase tracking-widest mt-10 shadow-2xl from-indigo-500 to-blue-600 shadow-indigo-500/20`}
                         >
                             {loading ? (
                                 <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
                             ) : (
-                                `Authorize ${role}`
+                                isLogin ? 'Authorize Entry' : `Initialize ${role}`
                             )}
                         </button>
                     </form>
 
                     <div className="mt-12 text-center">
-                        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">
-                            New tracker? <span className="text-white hover:text-indigo-400 cursor-pointer transition-colors">Apply for access</span>
-                        </p>
+                        <button
+                            type="button"
+                            onClick={() => setIsLogin(!isLogin)}
+                            className="text-slate-500 text-xs font-bold uppercase tracking-widest"
+                        >
+                            {isLogin ? "New tracker? " : "Already registered? "}
+                            <span className="text-white hover:text-indigo-400 transition-colors uppercase">
+                                {isLogin ? "Apply for Access" : "Secure Entry"}
+                            </span>
+                        </button>
                     </div>
                 </div>
             </div>

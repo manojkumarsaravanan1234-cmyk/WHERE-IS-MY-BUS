@@ -146,6 +146,17 @@ const AdminDashboard = () => {
                             Assets
                         </button>
                     </div>
+                    <button
+                        onClick={() => {
+                            import('../services/auth').then(auth => {
+                                auth.default.logout();
+                                navigate('/login');
+                            });
+                        }}
+                        className="glass-button-ghost text-[10px] px-6 py-3 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                    >
+                        LOGOUT
+                    </button>
                 </header>
 
                 {status.message && (
@@ -243,8 +254,8 @@ const AdminDashboard = () => {
                                     >
                                         <div className="flex-1">
                                             <div className="flex items-center gap-4 mb-4">
-                                                <span className="bg-white text-black px-3 py-1 rounded-lg text-[10px] font-black uppercase">{route.routeNumber}</span>
-                                                <h3 className="font-extrabold text-xl tracking-tight group-hover:text-indigo-400 transition-colors">{route.routeName}</h3>
+                                                <span className="bg-white text-black px-3 py-1 rounded-lg text-[10px] font-black uppercase">{route.routeNumber || route.route_number || 'N/A'}</span>
+                                                <h3 className="font-extrabold text-xl tracking-tight group-hover:text-indigo-400 transition-colors">{route.routeName || route.route_name || 'Unnamed Route'}</h3>
                                             </div>
                                             <div className="flex flex-wrap items-center gap-6">
                                                 <div className="flex items-center gap-2">
@@ -298,7 +309,9 @@ const AdminDashboard = () => {
                                         >
                                             <option value="">Standby Mode</option>
                                             {routes.map(r => (
-                                                <option key={r._id} value={r._id}>{r.routeNumber} - {r.routeName}</option>
+                                                <option key={r._id || r.id} value={r._id || r.id} className="bg-slate-900 text-white">
+                                                    {(r.routeNumber || r.route_number || 'N/A')} - {(r.routeName || r.route_name || 'Unnamed')}
+                                                </option>
                                             ))}
                                         </select>
                                     </div>
@@ -323,10 +336,12 @@ const AdminDashboard = () => {
                                         </div>
                                         <h3 className="font-black text-2xl tracking-tighter mb-1 mt-2">{bus.busNumber}</h3>
                                         <p
-                                            onClick={() => bus.routeId && setActiveTab('routes')}
-                                            className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${bus.routeId ? 'text-indigo-400 cursor-pointer hover:text-indigo-300 transition-colors' : 'text-slate-500'}`}
+                                            onClick={() => (bus.routeId || bus.routes) && setActiveTab('routes')}
+                                            className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${(bus.routeId || bus.routes) ? 'text-indigo-400 cursor-pointer hover:text-indigo-300 transition-colors' : 'text-slate-500'}`}
                                         >
-                                            {bus.routeId ? `Route: ${bus.routeId.routeNumber}` : 'Unassigned'}
+                                            {(bus.routeId || bus.routes)
+                                                ? `Route: ${(bus.routeId?.routeNumber || bus.routeId?.route_number || bus.routes?.route_number || 'Unknown')}`
+                                                : 'Unassigned'}
                                         </p>
                                         {bus.isActive && (
                                             <div className="flex items-center gap-4 pt-4 border-t border-white/5">

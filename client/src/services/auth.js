@@ -5,9 +5,21 @@ const authAPI = {
         try {
             const response = await api.post('/auth/login', { email, password });
             if (response.success) {
-                // Store user data in localStorage
+                // Store user data and token
                 localStorage.setItem('adminUser', JSON.stringify(response.user));
+                if (response.token) {
+                    localStorage.setItem('token', response.token);
+                }
             }
+            return response;
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    signup: async (userData) => {
+        try {
+            const response = await api.post('/auth/signup', userData);
             return response;
         } catch (error) {
             throw error;
@@ -16,6 +28,7 @@ const authAPI = {
 
     logout: () => {
         localStorage.removeItem('adminUser');
+        localStorage.removeItem('token');
     },
 
     getCurrentUser: () => {
@@ -25,7 +38,9 @@ const authAPI = {
     },
 
     isAuthenticated: () => {
-        return localStorage.getItem('adminUser') !== null;
+        // Admin check (specific to current logic) or role check
+        const user = authAPI.getCurrentUser();
+        return user !== null && user.role === 'admin';
     }
 };
 

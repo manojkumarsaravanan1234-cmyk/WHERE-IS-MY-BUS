@@ -43,7 +43,7 @@ const mapOptions = {
     ]
 };
 
-const LiveMap = ({ buses, userLocation, routeCoordinates }) => {
+const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
     const { isLoaded, loadError } = useJsApiLoader({
         id: 'google-map-script',
         googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_KEY,
@@ -230,6 +230,26 @@ const LiveMap = ({ buses, userLocation, routeCoordinates }) => {
                                 }}
                             />
                         </React.Fragment>
+                    );
+                })}
+
+                {/* Stop Markers */}
+                {stops && stops.map((stop, index) => {
+                    const coords = stop.coordinates.coordinates || stop.coordinates;
+                    return (
+                        <Marker
+                            key={`stop-${index}`}
+                            position={{ lat: coords[1], lng: coords[0] }}
+                            icon={{
+                                path: map && window.google ? window.google.maps.SymbolPath.CIRCLE : 0,
+                                fillColor: "#ffffff",
+                                fillOpacity: 1,
+                                strokeWeight: 2,
+                                strokeColor: "#6366f1",
+                                scale: 4,
+                            }}
+                            title={stop.name}
+                        />
                     );
                 })}
 

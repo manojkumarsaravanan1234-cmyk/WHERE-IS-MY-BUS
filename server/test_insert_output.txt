@@ -1,0 +1,7 @@
+--- Testing Insert into routes ---
+(node:18884) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and HTTPS requests insecure by disabling certificate verification.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Γ¥î Insert Failed: Could not find the 'estimated_duration' column of 'routes' in the schema cache
+Code: PGRST204
+Details: null
+Hint: null

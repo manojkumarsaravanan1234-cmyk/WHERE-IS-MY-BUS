@@ -10,7 +10,15 @@ exports.getAllRoutes = async (req, res) => {
     try {
         const { source, destination } = req.query;
 
-        let query = supabase.from('routes').select('*').eq('is_active', true);
+        let query = supabase.from('routes').select('*');
+
+        // Use active filter only if explicitly queried or as a mild default for search
+        if (!source && !destination) {
+            // No filter for general fetch (Admin needs everything)
+            query = query;
+        } else {
+            query = query.eq('is_active', true);
+        }
 
         // Search by source, destination or routeName (partial match)
         // Supabase doesn't support complex $or regex well without RPC or complex filter
@@ -27,8 +35,13 @@ exports.getAllRoutes = async (req, res) => {
 
         if (error) throw error;
 
-        // Map id to _id for frontend compatibility
-        const routes = data.map(route => ({ ...route, _id: route.id }));
+        // Map for frontend compatibility
+        const routes = data.map(route => ({
+            ...route,
+            _id: route.id,
+            routeName: route.route_name,
+            routeNumber: route.route_number
+        }));
 
         res.status(200).json({
             success: true,
@@ -65,7 +78,12 @@ exports.getRouteById = async (req, res) => {
             });
         }
 
-        const route = { ...data, _id: data.id };
+        const route = {
+            ...data,
+            _id: data.id,
+            routeName: data.route_name,
+            routeNumber: data.route_number
+        };
 
         res.status(200).json({
             success: true,
@@ -99,25 +117,28 @@ exports.createRoute = async (req, res) => {
 
         const formattedRouteNumber = String(routeNumber).toUpperCase();
 
+        const insertData = {
+            route_name: routeName,
+            route_number: formattedRouteNumber,
+            source: {
+                name: source.name,
+                coordinates: source.coordinates,
+            },
+            destination: {
+                name: destination.name,
+                coordinates: destination.coordinates,
+            },
+            stops: Array.isArray(stops) ? stops : [],
+            distance: distance || 0,
+            is_active: true
+        };
+
+        // Note: estimated_duration column missing in Supabase, omitting for now
+        // if (estimatedDuration) insertData.estimated_duration = estimatedDuration;
+
         const { data, error } = await supabase
             .from('routes')
-            .insert([
-                {
-                    route_name: routeName,
-                    route_number: formattedRouteNumber,
-                    source: {
-                        name: source.name,
-                        coordinates: source.coordinates,
-                    },
-                    destination: {
-                        name: destination.name,
-                        coordinates: destination.coordinates,
-                    },
-                    stops: Array.isArray(stops) ? stops : [],
-                    distance: distance || 0,
-                    estimated_duration: estimatedDuration || 0,
-                },
-            ])
+            .insert([insertData])
             .select()
             .single();
 
@@ -134,7 +155,12 @@ exports.createRoute = async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'Route created successfully',
-            data: { ...data, _id: data.id },
+            data: {
+                ...data,
+                _id: data.id,
+                routeName: data.route_name,
+                routeNumber: data.route_number
+            },
         });
     } catch (error) {
         console.error('Error creating route:', error);
@@ -142,6 +168,8 @@ exports.createRoute = async (req, res) => {
             success: false,
             message: 'Error creating route',
             error: error.message,
+            details: error.details,
+            hint: error.hint
         });
     }
 };
@@ -153,9 +181,18 @@ exports.createRoute = async (req, res) => {
  */
 exports.updateRoute = async (req, res) => {
     try {
+        const updateData = {};
+        if (req.body.routeName) updateData.route_name = req.body.routeName;
+        if (req.body.routeNumber) updateData.route_number = req.body.routeNumber.toUpperCase();
+        if (req.body.source) updateData.source = req.body.source;
+        if (req.body.destination) updateData.destination = req.body.destination;
+        if (req.body.stops) updateData.stops = req.body.stops;
+        if (req.body.distance !== undefined) updateData.distance = req.body.distance;
+        if (req.body.isActive !== undefined) updateData.is_active = req.body.isActive;
+
         const { data, error } = await supabase
             .from('routes')
-            .update(req.body)
+            .update(updateData)
             .eq('id', req.params.id)
             .select()
             .single();
@@ -170,7 +207,12 @@ exports.updateRoute = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Route updated successfully',
-            data: { ...data, _id: data.id },
+            data: {
+                ...data,
+                _id: data.id,
+                routeName: data.route_name,
+                routeNumber: data.route_number
+            },
         });
     } catch (error) {
         console.error('Error updating route:', error);
@@ -191,10 +233,10 @@ exports.deleteRoute = async (req, res) => {
     try {
         const routeId = req.params.id;
 
-        // 1. Soft delete the route
+        // 1. Hard delete the route (to free up the Serial ID/Route Number)
         const { data, error } = await supabase
             .from('routes')
-            .update({ is_active: false })
+            .delete()
             .eq('id', routeId)
             .select()
             .single();
@@ -215,7 +257,12 @@ exports.deleteRoute = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Route decommissioned and assets released successfully. 🏁',
-            data: { ...data, _id: data.id },
+            data: {
+                ...data,
+                _id: data.id,
+                routeName: data.route_name,
+                routeNumber: data.route_number
+            },
         });
     } catch (error) {
         console.error('Error deleting route:', error);
@@ -261,7 +308,12 @@ exports.findNearbyRoutes = async (req, res) => {
             if (!route.source || !route.source.coordinates) return false;
             // Haversine calculation... omitted for brevity, just return all for now or do simple box
             return true;
-        }).map(r => ({ ...r, _id: r.id }));
+        }).map(r => ({
+            ...r,
+            _id: r.id,
+            routeName: r.route_name,
+            routeNumber: r.route_number
+        }));
 
         res.status(200).json({
             success: true,

@@ -123,6 +123,29 @@ module.exports = (io) => {
 
                 if (error || !bus) return;
 
+                // Calculate Next Stop if route has stops
+                let nextStop = null;
+                if (bus.routes && Array.isArray(bus.routes.stops) && bus.routes.stops.length > 0) {
+                    // Find the stop that has the smallest order but is ahead of the bus?
+                    // Or just find the closest stop. For simplicity and robustness, 
+                    // we find the stop with the smallest order whose coordinates are "after" the bus
+                    // but since routes can be complex, let's find the closest stop that isn't the one we just passed.
+
+                    let minDistance = Infinity;
+                    let closestStop = null;
+
+                    bus.routes.stops.forEach(stop => {
+                        const stopCoords = stop.coordinates.coordinates || stop.coordinates;
+                        const dist = calculateDistance(latitude, longitude, stopCoords[1], stopCoords[0]);
+                        if (dist < minDistance) {
+                            minDistance = dist;
+                            closestStop = stop;
+                        }
+                    });
+
+                    nextStop = closestStop;
+                }
+
                 const locationUpdate = {
                     busNumber: formattedBusNumber,
                     location: { type: 'Point', coordinates: [longitude, latitude] },
@@ -131,6 +154,7 @@ module.exports = (io) => {
                     timestamp: Date.now(),
                     routeId: bus.route_id,
                     routeName: bus.routes?.route_name,
+                    nextStop: nextStop
                 };
 
                 // Broadcast
