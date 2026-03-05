@@ -1,22 +1,59 @@
 import React, { useState } from 'react';
 import { searchPlace } from '../services/mapService';
 
-const LocationSearch = ({ placeholder, onSelect }) => {
-    const [query, setQuery] = useState('');
+const LocationSearch = ({ placeholder, onSelect, value = '' }) => {
+    const [query, setQuery] = useState(value);
     const [results, setResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
-    const handleSearch = async (e) => {
-        const val = e.target.value;
+    // Sync query with external value (useful for clearing)
+    React.useEffect(() => {
+        setQuery(value);
+    }, [value]);
+
+    const handleSearch = async (val) => {
         setQuery(val);
         if (val.length > 2) {
             setIsSearching(true);
             const data = await searchPlace(val);
             setResults(data);
             setIsSearching(false);
+            return data;
         } else {
             setResults([]);
+            return [];
         }
+    };
+
+    const handleSelect = (place) => {
+        const shortName = place.display_name.split(',')[0];
+        onSelect({
+            name: shortName,
+            lat: parseFloat(place.lat),
+            lng: parseFloat(place.lon)
+        });
+        setQuery(shortName);
+        setResults([]);
+    };
+
+    const handleKeyDown = async (e) => {
+        if (e.key === 'Enter' && query.length > 2) {
+            e.preventDefault();
+            const data = results.length > 0 ? results : await handleSearch(query);
+            if (data && data.length > 0) {
+                handleSelect(data[0]);
+            }
+        }
+    };
+
+    const handleBlur = async () => {
+        // Short delay to allow clicking a result
+        setTimeout(async () => {
+            if (results.length > 0 && query.length > 2) {
+                // If there's a match but nothing was clicked, auto-pick the first one
+                // handleSelect(results[0]); // Optional: Auto-correcting could be annoying
+            }
+        }, 200);
     };
 
     return (
@@ -25,8 +62,10 @@ const LocationSearch = ({ placeholder, onSelect }) => {
                 className="glass-input w-full"
                 placeholder={placeholder}
                 value={query}
-                onChange={handleSearch}
-                style={{ color: 'white' }} // Explicitly setting white text for clarity
+                onChange={(e) => handleSearch(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={handleBlur}
+                style={{ color: 'white' }}
             />
             {isSearching && (
                 <div className="absolute right-3 top-3 text-indigo-400 animate-spin">
@@ -42,16 +81,7 @@ const LocationSearch = ({ placeholder, onSelect }) => {
                         <div
                             key={place.place_id}
                             className="p-4 hover:bg-indigo-500/10 cursor-pointer border-b border-white/5 last:border-none transition-all group"
-                            onClick={() => {
-                                const shortName = place.display_name.split(',')[0];
-                                onSelect({
-                                    name: shortName,
-                                    lat: parseFloat(place.lat),
-                                    lng: parseFloat(place.lon)
-                                });
-                                setQuery(shortName);
-                                setResults([]);
-                            }}
+                            onClick={() => handleSelect(place)}
                         >
                             <p className="font-bold text-white group-hover:text-indigo-400 transition-colors text-sm">{place.display_name.split(',')[0]}</p>
                             <p className="text-[10px] text-slate-500 font-medium truncate mt-1">{place.display_name}</p>

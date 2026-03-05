@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { routeAPI, busAPI } from '../services/api';
 import LocationSearch from '../components/LocationSearch';
+import LiveMap from '../components/Map/LiveMap';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
@@ -21,19 +22,22 @@ const AdminDashboard = () => {
     // "Smart Fill" logic: Detects pattern "City1 to City2" and auto-fills coordinates
     useEffect(() => {
         const routeLower = newRoute.routeName.toLowerCase();
-        if (routeLower.includes(' to ')) {
-            const parts = routeLower.split(' to ');
-            const src = parts[0].trim();
-            const dest = parts[1].trim();
+        // Dictionary of preset locations for common cities
+        const presets = {
+            'salem': { name: 'Salem, Tamil Nadu', lat: 11.6643, lng: 78.1460 },
+            'rasipuram': { name: 'Rasipuram, Tamil Nadu', lat: 11.4589, lng: 78.1722 },
+            'valappady': { name: 'Valappady, Salem', lat: 11.6521, lng: 78.4116 },
+            'chennai': { name: 'Chennai, Tamil Nadu', lat: 13.0827, lng: 80.2707 },
+            'tambaram': { name: 'Tambaram, Chennai', lat: 12.9229, lng: 80.1275 },
+            'central': { name: 'Chennai Central', lat: 13.0818, lng: 80.2722 },
+            'airport': { name: 'Chennai Airport', lat: 12.9941, lng: 80.1709 }
+        };
 
-            const presets = {
-                'salem': { name: 'Salem, Tamil Nadu', lat: 11.6643, lng: 78.1460 },
-                'rasipuram': { name: 'Rasipuram, Tamil Nadu', lat: 11.4589, lng: 78.1722 },
-                'chennai': { name: 'Chennai, Tamil Nadu', lat: 13.0827, lng: 80.2707 },
-                'tambaram': { name: 'Tambaram, Chennai', lat: 12.9229, lng: 80.1275 },
-                'central': { name: 'Chennai Central', lat: 13.0818, lng: 80.2722 },
-                'airport': { name: 'Chennai Airport', lat: 12.9941, lng: 80.1709 }
-            };
+        // Enhanced pattern matching for "Source to Destination"
+        const match = routeLower.match(/(.+)\s+to\s+(.+)/);
+        if (match) {
+            const src = match[1].trim();
+            const dest = match[2].trim();
 
             if (presets[src] && presets[dest]) {
                 setNewRoute(prev => ({
@@ -47,6 +51,8 @@ const AdminDashboard = () => {
 
     useEffect(() => {
         fetchData();
+        const interval = setInterval(fetchData, 30000); // Periodic refresh for fleet status
+        return () => clearInterval(interval);
     }, []);
 
     const fetchData = async () => {
@@ -54,7 +60,12 @@ const AdminDashboard = () => {
             const routesRes = await routeAPI.getRoutes();
             setRoutes(routesRes.data);
             const busesRes = await busAPI.getBuses();
-            setBuses(busesRes.data);
+            // Map current_location to location for LiveMap compatibility
+            const processedBuses = busesRes.data.map(b => ({
+                ...b,
+                location: b.current_location || { coordinates: [0, 0] }
+            }));
+            setBuses(processedBuses);
         } catch (error) {
             console.error("Error loading data", error);
         }
@@ -119,6 +130,11 @@ const AdminDashboard = () => {
             setStatus({ type: 'error', message: error.response?.data?.message || 'Registration failed' });
         }
     };
+
+    // Prepare route preview markers for the map
+    const previewStops = [];
+    if (newRoute.source.lat) previewStops.push({ name: 'Source', coordinates: [parseFloat(newRoute.source.lng), parseFloat(newRoute.source.lat)] });
+    if (newRoute.destination.lat) previewStops.push({ name: 'Destination', coordinates: [parseFloat(newRoute.destination.lng), parseFloat(newRoute.destination.lat)] });
 
     return (
         <div className="min-h-screen bg-slate-950 text-white p-6 font-sans relative overflow-hidden">
@@ -203,7 +219,8 @@ const AdminDashboard = () => {
                                         <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1 mb-3 block">Origin Search</label>
                                         <LocationSearch
                                             placeholder="Search source..."
-                                            onSelect={(loc) => setNewRoute({ ...newRoute, source: { ...loc } })}
+                                            value={newRoute.source.name}
+                                            onSelect={(loc) => setNewRoute(prev => ({ ...prev, source: { ...loc } }))}
                                         />
                                         {newRoute.source.name && (
                                             <div className="mt-3 text-[10px] font-mono text-indigo-300 bg-indigo-500/10 p-2 rounded">
@@ -213,10 +230,11 @@ const AdminDashboard = () => {
                                     </div>
 
                                     <div className="pt-2">
-                                        <label className="text-[10px] font-bold text-rose-400 uppercase tracking-widest ml-1 mb-3 block">Host Search</label>
+                                        <label className="text-[10px] font-bold text-rose-400 uppercase tracking-widest ml-1 mb-3 block">Target Search</label>
                                         <LocationSearch
                                             placeholder="Search destination..."
-                                            onSelect={(loc) => setNewRoute({ ...newRoute, destination: { ...loc } })}
+                                            value={newRoute.destination.name}
+                                            onSelect={(loc) => setNewRoute(prev => ({ ...prev, destination: { ...loc } }))}
                                         />
                                         {newRoute.destination.name && (
                                             <div className="mt-3 text-[10px] font-mono text-rose-300 bg-rose-500/10 p-2 rounded">
@@ -232,6 +250,15 @@ const AdminDashboard = () => {
                                         Configure Route
                                     </button>
                                 </form>
+
+                                {/* Preview Map for Route Creation */}
+                                <div className="mt-8 h-48 rounded-2xl overflow-hidden border border-white/5 grayscale hover:grayscale-0 transition-all">
+                                    <LiveMap
+                                        buses={[]}
+                                        stops={previewStops}
+                                        routeCoordinates={[]}
+                                    />
+                                </div>
                             </div>
                         </div>
 
@@ -260,12 +287,12 @@ const AdminDashboard = () => {
                                             <div className="flex flex-wrap items-center gap-6">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-indigo-400">📍</span>
-                                                    <span className="text-xs font-bold text-slate-400">{route.source.name}</span>
+                                                    <span className="text-xs font-bold text-slate-400">{route.source?.name || 'Unknown'}</span>
                                                 </div>
                                                 <div className="text-slate-700">➜</div>
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-rose-400">🏁</span>
-                                                    <span className="text-xs font-bold text-slate-400">{route.destination.name}</span>
+                                                    <span className="text-xs font-bold text-slate-400">{route.destination?.name || 'Unknown'}</span>
                                                 </div>
                                             </div>
                                             <p className="mt-4 text-[9px] font-mono text-slate-600 bg-black/20 p-1 px-2 rounded inline-block">ID: {route._id}</p>
@@ -322,28 +349,42 @@ const AdminDashboard = () => {
                             </div>
                         </div>
 
-                        {/* List Buses */}
-                        <div className="lg:col-span-8">
-                            <h2 className="text-xl font-bold mb-6 flex items-center gap-3">
+                        {/* Fleet Status with Map */}
+                        <div className="lg:col-span-8 flex flex-col gap-6">
+                            <div className="h-[400px] rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative group">
+                                <div className="absolute top-4 left-4 z-10 glass-panel py-1 px-3 bg-slate-900/60 backdrop-blur-md">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                                        Live Fleet Overview
+                                    </span>
+                                </div>
+                                <LiveMap
+                                    buses={buses.filter(b => b.is_active)}
+                                    stops={[]}
+                                    routeCoordinates={[]}
+                                />
+                            </div>
+
+                            <h2 className="text-xl font-bold flex items-center gap-3">
                                 <span className="w-1 h-6 bg-rose-500 rounded-full"></span>
-                                Fleet Status ({buses.length})
+                                Fleet Registry ({buses.length})
                             </h2>
-                            <div className="grid md:grid-cols-2 gap-6">
+                            <div className="grid md:grid-cols-2 gap-4">
                                 {buses.map(bus => (
                                     <div key={bus._id} className="glass-card p-6 relative overflow-hidden group">
-                                        <div className={`absolute top-0 right-0 py-1.5 px-4 rounded-bl-2xl text-[10px] font-black uppercase tracking-widest ${bus.isActive ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
-                                            {bus.isActive ? 'Online' : 'Standby'}
+                                        <div className={`absolute top-0 right-0 py-1.5 px-4 rounded-bl-2xl text-[10px] font-black uppercase tracking-widest ${bus.is_active ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                            {bus.is_active ? 'Online' : 'Standby'}
                                         </div>
-                                        <h3 className="font-black text-2xl tracking-tighter mb-1 mt-2">{bus.busNumber}</h3>
+                                        <h3 className="font-black text-2xl tracking-tighter mb-1 mt-2">{bus.bus_number}</h3>
                                         <p
-                                            onClick={() => (bus.routeId || bus.routes) && setActiveTab('routes')}
-                                            className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${(bus.routeId || bus.routes) ? 'text-indigo-400 cursor-pointer hover:text-indigo-300 transition-colors' : 'text-slate-500'}`}
+                                            onClick={() => (bus.route_id || bus.routes) && setActiveTab('routes')}
+                                            className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${(bus.route_id || bus.routes) ? 'text-indigo-400 cursor-pointer hover:text-indigo-300 transition-colors' : 'text-slate-500'}`}
                                         >
-                                            {(bus.routeId || bus.routes)
-                                                ? `Route: ${(bus.routeId?.routeNumber || bus.routeId?.route_number || bus.routes?.route_number || 'Unknown')}`
+                                            {(bus.route_id || bus.routes)
+                                                ? `Route: ${(bus.routes?.route_number || 'Assigned')}`
                                                 : 'Unassigned'}
                                         </p>
-                                        {bus.isActive && (
+                                        {bus.is_active && (
                                             <div className="flex items-center gap-4 pt-4 border-t border-white/5">
                                                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                                                 <span className="text-xs font-mono text-slate-400">Telemetry: {Math.round(bus.speed)} km/h</span>
