@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { routeAPI, busAPI } from '../services/api';
+import { getRoutePolyline } from '../services/mapService';
 import LocationSearch from '../components/LocationSearch';
 import LiveMap from '../components/Map/LiveMap';
 
@@ -17,15 +18,33 @@ const AdminDashboard = () => {
         destination: { name: '', lat: '', lng: '' },
     });
     const [newBus, setNewBus] = useState({ busNumber: '', routeId: '' });
+    const [routeCoords, setRouteCoords] = useState([]);
     const [status, setStatus] = useState({ type: '', message: '' });
 
-    // "Smart Fill" logic: Detects pattern "City1 to City2" and auto-fills coordinates
+    useEffect(() => {
+        const updateRoutePreview = async () => {
+            if (newRoute.source.lat && newRoute.destination.lat) {
+                const route = await getRoutePolyline(
+                    [newRoute.source.lng, newRoute.source.lat],
+                    [newRoute.destination.lng, newRoute.destination.lat]
+                );
+                if (route && route.geometry) {
+                    setRouteCoords(route.geometry.coordinates);
+                }
+            } else {
+                setRouteCoords([]);
+            }
+        };
+        updateRoutePreview();
+    }, [newRoute.source, newRoute.destination]);
+
+    // Re-added "Smart Fill" logic: Detects pattern "City1 to City2" and auto-fills coordinates
     useEffect(() => {
         const routeLower = newRoute.routeName.toLowerCase();
-        // Dictionary of preset locations for common cities
         const presets = {
             'salem': { name: 'Salem, Tamil Nadu', lat: 11.6643, lng: 78.1460 },
             'rasipuram': { name: 'Rasipuram, Tamil Nadu', lat: 11.4589, lng: 78.1722 },
+            'madurai': { name: 'Madurai, Tamil Nadu', lat: 9.9252, lng: 78.1198 },
             'valappady': { name: 'Valappady, Salem', lat: 11.6521, lng: 78.4116 },
             'chennai': { name: 'Chennai, Tamil Nadu', lat: 13.0827, lng: 80.2707 },
             'tambaram': { name: 'Tambaram, Chennai', lat: 12.9229, lng: 80.1275 },
@@ -33,7 +52,6 @@ const AdminDashboard = () => {
             'airport': { name: 'Chennai Airport', lat: 12.9941, lng: 80.1709 }
         };
 
-        // Enhanced pattern matching for "Source to Destination"
         const match = routeLower.match(/(.+)\s+to\s+(.+)/);
         if (match) {
             const src = match[1].trim();
@@ -136,6 +154,13 @@ const AdminDashboard = () => {
     if (newRoute.source.lat) previewStops.push({ name: 'Source', coordinates: [parseFloat(newRoute.source.lng), parseFloat(newRoute.source.lat)] });
     if (newRoute.destination.lat) previewStops.push({ name: 'Destination', coordinates: [parseFloat(newRoute.destination.lng), parseFloat(newRoute.destination.lat)] });
 
+    // Prepare all route markers for fleet overview
+    const allRouteMarkers = routes.reduce((acc, r) => {
+        if (r.source) acc.push({ ...r.source, name: `${r.routeName || r.route_name} (S)` });
+        if (r.destination) acc.push({ ...r.destination, name: `${r.routeName || r.route_name} (D)` });
+        return acc;
+    }, []);
+
     return (
         <div className="min-h-screen bg-slate-950 text-white p-6 font-sans relative overflow-hidden">
             {/* Background Orbs */}
@@ -222,11 +247,17 @@ const AdminDashboard = () => {
                                             value={newRoute.source.name}
                                             onSelect={(loc) => setNewRoute(prev => ({ ...prev, source: { ...loc } }))}
                                         />
-                                        {newRoute.source.name && (
-                                            <div className="mt-3 text-[10px] font-mono text-indigo-300 bg-indigo-500/10 p-2 rounded">
-                                                Locked: {newRoute.source.name.substring(0, 30)}...
-                                            </div>
-                                        )}
+                                        <div className="mt-3 flex items-center justify-between">
+                                            {newRoute.source.name ? (
+                                                <div className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 p-2 rounded flex-1">
+                                                    COORD LOCKED: {newRoute.source.lat.toString().substring(0, 8)}, {newRoute.source.lng.toString().substring(0, 8)}
+                                                </div>
+                                            ) : (
+                                                <div className="text-[10px] font-mono text-slate-500 bg-white/5 p-2 rounded flex-1">
+                                                    WAITING FOR ORIGIN...
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="pt-2">
@@ -236,11 +267,17 @@ const AdminDashboard = () => {
                                             value={newRoute.destination.name}
                                             onSelect={(loc) => setNewRoute(prev => ({ ...prev, destination: { ...loc } }))}
                                         />
-                                        {newRoute.destination.name && (
-                                            <div className="mt-3 text-[10px] font-mono text-rose-300 bg-rose-500/10 p-2 rounded">
-                                                Locked: {newRoute.destination.name.substring(0, 30)}...
-                                            </div>
-                                        )}
+                                        <div className="mt-3 flex items-center justify-between">
+                                            {newRoute.destination.name ? (
+                                                <div className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 p-2 rounded flex-1">
+                                                    COORD LOCKED: {newRoute.destination.lat.toString().substring(0, 8)}, {newRoute.destination.lng.toString().substring(0, 8)}
+                                                </div>
+                                            ) : (
+                                                <div className="text-[10px] font-mono text-slate-500 bg-white/5 p-2 rounded flex-1">
+                                                    WAITING FOR TARGET...
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <button
@@ -256,7 +293,7 @@ const AdminDashboard = () => {
                                     <LiveMap
                                         buses={[]}
                                         stops={previewStops}
-                                        routeCoordinates={[]}
+                                        routeCoordinates={routeCoords}
                                     />
                                 </div>
                             </div>
@@ -360,7 +397,7 @@ const AdminDashboard = () => {
                                 </div>
                                 <LiveMap
                                     buses={buses.filter(b => b.is_active)}
-                                    stops={[]}
+                                    stops={allRouteMarkers}
                                     routeCoordinates={[]}
                                 />
                             </div>

@@ -139,7 +139,10 @@ const LiveView = () => {
                         routeData.destination.coordinates
                     );
                     if (poly && poly.geometry) {
-                        const leafletCoords = poly.geometry.coordinates.map(c => [c[1], c[0]]);
+                        const leafletCoords = poly.geometry.coordinates.map(c => {
+                             // Handle [lng, lat] vs [lat, lng] if needed, but OSRM/MapBox usually [lng, lat]
+                             return [c[1], c[0]];
+                        });
                         setRouteGeometry(leafletCoords);
                     }
                 }
@@ -276,7 +279,10 @@ const LiveView = () => {
             <div className="flex-1 relative">
                 <LiveMap
                     buses={buses}
-                    routeCoordinates={routeGeometry.length > 0 ? routeGeometry : route?.stops?.map(s => [s.coordinates.coordinates[1], s.coordinates.coordinates[0]])}
+                    routeCoordinates={routeGeometry.length > 0 ? routeGeometry : route?.stops?.map(s => {
+                        const coords = s.coordinates?.coordinates || s.coordinates;
+                        return [coords[1], coords[0]];
+                    })}
                     userLocation={userLocation}
                     stops={route?.stops}
                 />

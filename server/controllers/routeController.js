@@ -12,35 +12,45 @@ exports.getAllRoutes = async (req, res) => {
 
         let query = supabase.from('routes').select('*');
 
-        // Use active filter only if explicitly queried or as a mild default for search
-        if (!source && !destination) {
-            // No filter for general fetch (Admin needs everything)
-            query = query;
-        } else {
+        // Use active filter for general searches
+        if (source || destination) {
             query = query.eq('is_active', true);
         }
 
-        // Search by source, destination or routeName (partial match)
-        // Supabase doesn't support complex $or regex well without RPC or complex filter
-        // We'll fetch and filter if needed, or simple ilike
-        if (source) {
+        // Search logic
+        if (source && destination) {
+            // If both provided, try to find routes matching both
             query = query.or(`route_name.ilike.%${source}%,source->>name.ilike.%${source}%`);
-        }
-
-        if (destination) {
-            query = query.or(`route_name.ilike.%${destination}%,destination->>name.ilike.%${destination}%`);
+        } else if (source) {
+            query = query.or(`route_name.ilike.%${source}%,source->>name.ilike.%${source}%,destination->>name.ilike.%${source}%`);
+        } else if (destination) {
+            query = query.or(`route_name.ilike.%${destination}%,destination->>name.ilike.%${destination}%,source->>name.ilike.%${destination}%`);
         }
 
         const { data, error } = await query.order('route_number', { ascending: true });
 
         if (error) throw error;
 
-        // Map for frontend compatibility
-        const routes = data.map(route => ({
+        // secondary processing if both source and destination provided to ensure "relevance"
+        let filteredData = data;
+        if (source && destination) {
+             const sLower = source.toLowerCase();
+             const dLower = destination.toLowerCase();
+             filteredData = data.filter(r => {
+                 const nameMatch = r.route_name?.toLowerCase().includes(sLower) || r.route_name?.toLowerCase().includes(dLower);
+                 const sourceMatch = r.source?.name?.toLowerCase().includes(sLower);
+                 const destMatch = r.destination?.name?.toLowerCase().includes(dLower);
+                 return nameMatch || (sourceMatch && destMatch);
+             });
+        }
+
+        // Map for frontend compatibility (MERN style)
+        const routes = filteredData.map(route => ({
             ...route,
             _id: route.id,
             routeName: route.route_name,
-            routeNumber: route.route_number
+            routeNumber: route.route_number,
+            isActive: route.is_active
         }));
 
         res.status(200).json({

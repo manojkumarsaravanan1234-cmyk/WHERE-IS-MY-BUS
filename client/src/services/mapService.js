@@ -5,12 +5,18 @@ const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving';
 
 export const searchPlace = async (query) => {
     try {
+        // Appending "Tamil Nadu" to bias results further if not already present
+        const searchTerms = query.toLowerCase().includes('tamil nadu') ? query : `${query}, Tamil Nadu`;
+
         const response = await axios.get(NOMINATIM_URL, {
             params: {
-                q: query,
+                q: searchTerms,
                 format: 'json',
                 addressdetails: 1,
-                limit: 5
+                limit: 5,
+                countrycodes: 'in',
+                viewbox: '76.2,13.5,80.4,8.0', // Tamil Nadu bounding box
+                bounded: 0 // Prioritize but don't strictly exclude
             }
         });
         return response.data;

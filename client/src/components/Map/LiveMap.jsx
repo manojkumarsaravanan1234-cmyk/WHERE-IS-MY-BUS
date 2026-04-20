@@ -52,6 +52,9 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
 
     const [map, setMap] = useState(null);
     const [selectedBus, setSelectedBus] = useState(null);
+    const [selectedStop, setSelectedStop] = useState(null);
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
     const onLoad = useCallback(function callback(map) {
         setMap(map);
@@ -64,8 +67,8 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
     const polylinePath = useMemo(() => {
         if (!routeCoordinates || routeCoordinates.length === 0) return [];
         return routeCoordinates.map(coord => ({
-            lat: coord[0],
-            lng: coord[1]
+            lat: coord[1],
+            lng: coord[0]
         }));
     }, [routeCoordinates]);
 
@@ -92,10 +95,15 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
                 });
             }
 
-            // Include user location in bounds
-            if (userLocation) {
-                bounds.extend(userLocation);
-                hasCoordinates = true;
+            // Include stops in bounds
+            if (stops && stops.length > 0) {
+                stops.forEach(stop => {
+                    const coords = stop.coordinates.coordinates || stop.coordinates;
+                    if (coords && coords.length === 2) {
+                        bounds.extend({ lat: coords[1], lng: coords[0] });
+                        hasCoordinates = true;
+                    }
+                });
             }
 
             if (hasCoordinates) {
@@ -236,6 +244,7 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
                 {/* Stop Markers */}
                 {stops && stops.map((stop, index) => {
                     const coords = stop.coordinates.coordinates || stop.coordinates;
+                    if (!coords || coords.length < 2) return null;
                     return (
                         <Marker
                             key={`stop-${index}`}
@@ -246,14 +255,58 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
                                 fillOpacity: 1,
                                 strokeWeight: 2,
                                 strokeColor: "#6366f1",
-                                scale: 4,
+                                scale: 6,
                             }}
                             title={stop.name}
+                            onClick={() => {
+                                setSelectedStop({
+                                    ...stop,
+                                    lat: coords[1],
+                                    lng: coords[0]
+                                });
+                                setSelectedBus(null);
+                            }}
                         />
                     );
                 })}
 
-                {/* Custom Info Window */}
+                {/* Stop Info Window with Image */}
+                {selectedStop && (
+                    <InfoWindow
+                        position={{ lat: selectedStop.lat, lng: selectedStop.lng }}
+                        onCloseClick={() => setSelectedStop(null)}
+                    >
+                        <div className="p-0 bg-slate-900 overflow-hidden rounded-lg min-w-[200px] max-w-[250px] border border-white/10 shadow-2xl">
+                            <div className="relative h-32 w-full bg-slate-800">
+                                <img
+                                    src={`https://maps.googleapis.com/maps/api/streetview?size=400x200&location=${selectedStop.lat},${selectedStop.lng}&key=${apiKey}`}
+                                    alt={selectedStop.name}
+                                    className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500"
+                                    onError={(e) => {
+                                        e.target.src = 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&q=80&w=400';
+                                    }}
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent opacity-60"></div>
+                                <div className="absolute bottom-2 left-3">
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tighter truncate w-40">{selectedStop.name}</h3>
+                                </div>
+                            </div>
+                            <div className="p-4 bg-slate-950">
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-4">Location Detail</p>
+                                <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${selectedStop.lat},${selectedStop.lng}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block w-full text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg shadow-indigo-600/20"
+                                >
+                                    OPEN IN GOOGLE MAPS ➔
+                                </a>
+                            </div>
+                        </div>
+                    </InfoWindow>
+                )}
+
+                {/* Custom Bus Info Window */}
                 {selectedBus && (
                     <InfoWindow
                         position={{
@@ -262,13 +315,28 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
                         }}
                         onCloseClick={() => setSelectedBus(null)}
                     >
-                        <div className="p-3 bg-slate-900 text-white min-w-[150px]">
-                            <h3 className="text-sm font-black uppercase text-indigo-400 mb-2">Bus {selectedBus.busNumber}</h3>
-                            <div className="space-y-1 text-[10px] font-bold">
-                                <p className="flex justify-between"><span>VELOCITY:</span> <span>{Math.round(selectedBus.speed)} KM/H</span></p>
-                                {selectedBus.nextStop && (
-                                    <p className="text-emerald-400 mt-2">➜ {selectedBus.nextStop.name}</p>
-                                )}
+                        <div className="p-0 bg-slate-900 overflow-hidden rounded-lg min-w-[200px] border border-white/10">
+                            <div className="p-4 bg-slate-950">
+                                <h3 className="text-sm font-black uppercase text-indigo-400 mb-3 flex items-center gap-2">
+                                    <span className="text-lg">🚌</span> Bus {selectedBus.busNumber}
+                                </h3>
+                                <div className="space-y-2 text-[10px] font-bold text-slate-300">
+                                    <p className="flex justify-between border-b border-white/5 pb-2">
+                                        <span className="text-slate-500 uppercase">VELOCITY</span>
+                                        <span>{Math.round(selectedBus.speed)} KM/H</span>
+                                    </p>
+                                    {selectedBus.nextStop && (
+                                        <p className="text-emerald-400 py-1 uppercase italic">➜ {selectedBus.nextStop.name}</p>
+                                    )}
+                                </div>
+                                <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${selectedBus.location.coordinates[1]},${selectedBus.location.coordinates[0]}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-4 block w-full text-center py-2 bg-slate-800 hover:bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest rounded-md transition-all border border-white/5"
+                                >
+                                    TRACK IN GOOGLE MAPS
+                                </a>
                             </div>
                         </div>
                     </InfoWindow>

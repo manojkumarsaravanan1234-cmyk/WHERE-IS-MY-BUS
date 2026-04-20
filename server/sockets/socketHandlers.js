@@ -108,11 +108,13 @@ module.exports = (io) => {
                 // Simple validation
                 if (typeof longitude !== 'number' || typeof latitude !== 'number') return;
 
+                console.log(`📍 Location update: Bus ${formattedBusNumber} at [${longitude}, ${latitude}]`);
+
                 // Update in Supabase
                 const { data: bus, error } = await supabase
                     .from('buses')
                     .update({
-                        current_location: { coordinates: [longitude, latitude] },
+                        current_location: { coordinates: [longitude, latitude], type: 'Point' },
                         speed: speed || 0,
                         heading: heading || 0,
                         last_updated: new Date().toISOString()
@@ -121,25 +123,26 @@ module.exports = (io) => {
                     .select('*, routes(*)')
                     .single();
 
-                if (error || !bus) return;
+                if (error || !bus) {
+                    if (error) console.error('❌ DB Update Error during location update:', error.message);
+                    return;
+                }
 
                 // Calculate Next Stop if route has stops
                 let nextStop = null;
                 if (bus.routes && Array.isArray(bus.routes.stops) && bus.routes.stops.length > 0) {
-                    // Find the stop that has the smallest order but is ahead of the bus?
-                    // Or just find the closest stop. For simplicity and robustness, 
-                    // we find the stop with the smallest order whose coordinates are "after" the bus
-                    // but since routes can be complex, let's find the closest stop that isn't the one we just passed.
-
                     let minDistance = Infinity;
                     let closestStop = null;
 
                     bus.routes.stops.forEach(stop => {
-                        const stopCoords = stop.coordinates.coordinates || stop.coordinates;
-                        const dist = calculateDistance(latitude, longitude, stopCoords[1], stopCoords[0]);
-                        if (dist < minDistance) {
-                            minDistance = dist;
-                            closestStop = stop;
+                        // Support both GeoJSON object and flat array
+                        const stopCoords = stop.coordinates?.coordinates || stop.coordinates;
+                        if (Array.isArray(stopCoords) && stopCoords.length >= 2) {
+                            const dist = calculateDistance(latitude, longitude, stopCoords[1], stopCoords[0]);
+                            if (dist < minDistance) {
+                                minDistance = dist;
+                                closestStop = stop;
+                            }
                         }
                     });
 
@@ -149,7 +152,7 @@ module.exports = (io) => {
                 const locationUpdate = {
                     busNumber: formattedBusNumber,
                     location: { type: 'Point', coordinates: [longitude, latitude] },
-                    speed: speed || 0,
+                    speed: Math.round(speed || 0),
                     heading: heading || 0,
                     timestamp: Date.now(),
                     routeId: bus.route_id,
