@@ -1,4 +1,4 @@
-const { supabase } = require('../config/database');
+const { supabase, supabaseAdmin } = require('../config/database');
 
 /**
  * @desc    Get all buses or filter by active status
@@ -114,7 +114,7 @@ exports.createBus = async (req, res) => {
 
         const formattedBusNumber = busNumber.toUpperCase();
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('buses')
             .insert([
                 {
@@ -170,7 +170,7 @@ exports.updateBusLocation = async (req, res) => {
             });
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('buses')
             .update({
                 current_location: { coordinates: [longitude, latitude] },
@@ -220,7 +220,7 @@ exports.startBusJourney = async (req, res) => {
             });
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('buses')
             .update({
                 route_id: routeId,
@@ -260,7 +260,7 @@ exports.startBusJourney = async (req, res) => {
  */
 exports.stopBusJourney = async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('buses')
             .update({
                 is_active: false,

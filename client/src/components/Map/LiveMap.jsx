@@ -212,20 +212,24 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
 
                 {/* Bus Markers */}
                 {buses.map((bus) => {
-                    const lat = bus.location?.coordinates?.[1];
-                    const lng = bus.location?.coordinates?.[0];
-                    if (lat === undefined || lng === undefined) return null;
+                    // Support both bus.location and bus.current_location (backend/supabase alias)
+                    const locData = bus.location || bus.current_location;
+                    const coords = locData?.coordinates || locData;
+                    const lat = Array.isArray(coords) ? coords[1] : coords?.lat;
+                    const lng = Array.isArray(coords) ? coords[0] : coords?.lng;
+                    
+                    if (lat === undefined || lng === undefined || lat === null || lng === null) return null;
 
                     return (
                         <React.Fragment key={bus.busNumber}>
                             <Marker
-                                position={{ lat, lng }}
+                                position={{ lat: Number(lat), lng: Number(lng) }}
                                 icon={{ ...busIcon, rotation: bus.heading || 0 }}
                                 onClick={() => setSelectedBus(bus)}
                             />
                             {/* Proximity Pulse */}
                             <Circle
-                                center={{ lat, lng }}
+                                center={{ lat: Number(lat), lng: Number(lng) }}
                                 radius={150}
                                 options={{
                                     strokeColor: "#6366f1",
@@ -243,12 +247,24 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
 
                 {/* Stop Markers */}
                 {stops && stops.map((stop, index) => {
-                    const coords = stop.coordinates.coordinates || stop.coordinates;
-                    if (!coords || coords.length < 2) return null;
+                    // Robust coordinate extraction
+                    const coordsObj = stop.coordinates?.coordinates || stop.coordinates;
+                    let lat, lng;
+                    
+                    if (Array.isArray(coordsObj)) {
+                        lng = coordsObj[0];
+                        lat = coordsObj[1];
+                    } else if (coordsObj && typeof coordsObj === 'object') {
+                        lat = coordsObj.lat;
+                        lng = coordsObj.lng;
+                    }
+
+                    if (lat === undefined || lng === undefined || lat === null || lng === null) return null;
+
                     return (
                         <Marker
                             key={`stop-${index}`}
-                            position={{ lat: coords[1], lng: coords[0] }}
+                            position={{ lat: Number(lat), lng: Number(lng) }}
                             icon={{
                                 path: map && window.google ? window.google.maps.SymbolPath.CIRCLE : 0,
                                 fillColor: "#ffffff",
@@ -261,8 +277,8 @@ const LiveMap = ({ buses, userLocation, routeCoordinates, stops }) => {
                             onClick={() => {
                                 setSelectedStop({
                                     ...stop,
-                                    lat: coords[1],
-                                    lng: coords[0]
+                                    lat: Number(lat),
+                                    lng: Number(lng)
                                 });
                                 setSelectedBus(null);
                             }}

@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { supabase } = require('../config/database');
+const { supabase, supabaseAdmin } = require('../config/database');
 
 /**
  * @desc    Login for all roles
@@ -88,7 +88,7 @@ exports.signup = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('users')
             .insert([{ name, email, password: hashedPassword, role: role || 'user' }])
             .select()

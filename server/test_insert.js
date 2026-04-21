@@ -11,7 +11,7 @@ async function testInsert() {
     console.log('--- Testing Insert into routes ---');
 
     // The schema expected by routeController.js:
-    // route_name, route_number, source { name, coordinates }, destination { name, coordinates }, stops, distance, estimated_duration
+    // route_name, route_number, source { name, coordinates }, destination { name, coordinates }, stops, distance
 
     const testRoute = {
         route_name: 'Salem to Rasipuram',

@@ -1,4 +1,4 @@
-const { supabase } = require('../config/database');
+const { supabase, supabaseAdmin } = require('../config/database');
 
 /**
  * @desc    Get all routes or search by source/destination
@@ -116,7 +116,7 @@ exports.getRouteById = async (req, res) => {
  */
 exports.createRoute = async (req, res) => {
     try {
-        const { routeName, routeNumber, source, destination, stops, distance, estimatedDuration } = req.body;
+        const { routeName, routeNumber, source, destination, stops, distance } = req.body;
 
         if (!routeName || !routeNumber || !source || !destination) {
             return res.status(400).json({
@@ -143,10 +143,7 @@ exports.createRoute = async (req, res) => {
             is_active: true
         };
 
-        // Note: estimated_duration column missing in Supabase, omitting for now
-        // if (estimatedDuration) insertData.estimated_duration = estimatedDuration;
-
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('routes')
             .insert([insertData])
             .select()
@@ -200,7 +197,7 @@ exports.updateRoute = async (req, res) => {
         if (req.body.distance !== undefined) updateData.distance = req.body.distance;
         if (req.body.isActive !== undefined) updateData.is_active = req.body.isActive;
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('routes')
             .update(updateData)
             .eq('id', req.params.id)
@@ -244,7 +241,7 @@ exports.deleteRoute = async (req, res) => {
         const routeId = req.params.id;
 
         // 1. Hard delete the route (to free up the Serial ID/Route Number)
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('routes')
             .delete()
             .eq('id', routeId)
@@ -258,8 +255,8 @@ exports.deleteRoute = async (req, res) => {
             });
         }
 
-        // 2. Unassign buses from this route
-        await supabase
+        // 2. Unassign buses from this route using Admin client
+        await supabaseAdmin
             .from('buses')
             .update({ route_id: null, is_active: false })
             .eq('route_id', routeId);
