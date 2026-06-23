@@ -1,4 +1,5 @@
-const { supabase, supabaseAdmin } = require('../config/database');
+const Route = require('../models/Route');
+const Bus = require('../models/Bus');
 
 /**
  * @desc    Get all routes or search by source/destination
@@ -9,54 +10,44 @@ const { supabase, supabaseAdmin } = require('../config/database');
 exports.getAllRoutes = async (req, res) => {
     try {
         const { source, destination } = req.query;
-
-        let query = supabase.from('routes').select('*');
+        let query = {};
 
         // Use active filter for general searches
         if (source || destination) {
-            query = query.eq('is_active', true);
+            query.isActive = true;
         }
 
         // Search logic
         if (source && destination) {
-            // If both provided, try to find routes matching both
-            query = query.or(`route_name.ilike.%${source}%,source->>name.ilike.%${source}%`);
+            const sRegex = new RegExp(source, 'i');
+            const dRegex = new RegExp(destination, 'i');
+            query.$or = [
+                { routeName: { $regex: sRegex } },
+                { routeName: { $regex: dRegex } },
+                { $and: [{ 'source.name': { $regex: sRegex } }, { 'destination.name': { $regex: dRegex } }] }
+            ];
         } else if (source) {
-            query = query.or(`route_name.ilike.%${source}%,source->>name.ilike.%${source}%,destination->>name.ilike.%${source}%`);
+            const sRegex = new RegExp(source, 'i');
+            query.$or = [
+                { routeName: { $regex: sRegex } },
+                { 'source.name': { $regex: sRegex } },
+                { 'destination.name': { $regex: sRegex } }
+            ];
         } else if (destination) {
-            query = query.or(`route_name.ilike.%${destination}%,destination->>name.ilike.%${destination}%,source->>name.ilike.%${destination}%`);
+            const dRegex = new RegExp(destination, 'i');
+            query.$or = [
+                { routeName: { $regex: dRegex } },
+                { 'source.name': { $regex: dRegex } },
+                { 'destination.name': { $regex: dRegex } }
+            ];
         }
 
-        const { data, error } = await query.order('route_number', { ascending: true });
-
-        if (error) throw error;
-
-        // secondary processing if both source and destination provided to ensure "relevance"
-        let filteredData = data;
-        if (source && destination) {
-             const sLower = source.toLowerCase();
-             const dLower = destination.toLowerCase();
-             filteredData = data.filter(r => {
-                 const nameMatch = r.route_name?.toLowerCase().includes(sLower) || r.route_name?.toLowerCase().includes(dLower);
-                 const sourceMatch = r.source?.name?.toLowerCase().includes(sLower);
-                 const destMatch = r.destination?.name?.toLowerCase().includes(dLower);
-                 return nameMatch || (sourceMatch && destMatch);
-             });
-        }
-
-        // Map for frontend compatibility (MERN style)
-        const routes = filteredData.map(route => ({
-            ...route,
-            _id: route.id,
-            routeName: route.route_name,
-            routeNumber: route.route_number,
-            isActive: route.is_active
-        }));
+        const data = await Route.find(query).sort('routeNumber');
 
         res.status(200).json({
             success: true,
-            count: routes.length,
-            data: routes,
+            count: data.length,
+            data: data,
         });
     } catch (error) {
         console.error('Error fetching routes:', error);
@@ -75,29 +66,18 @@ exports.getAllRoutes = async (req, res) => {
  */
 exports.getRouteById = async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('routes')
-            .select('*')
-            .eq('id', req.params.id)
-            .single();
+        const data = await Route.findById(req.params.id);
 
-        if (error || !data) {
+        if (!data) {
             return res.status(404).json({
                 success: false,
                 message: 'Route not found',
             });
         }
 
-        const route = {
-            ...data,
-            _id: data.id,
-            routeName: data.route_name,
-            routeNumber: data.route_number
-        };
-
         res.status(200).json({
             success: true,
-            data: route,
+            data: data,
         });
     } catch (error) {
         console.error('Error fetching route:', error);
@@ -128,46 +108,39 @@ exports.createRoute = async (req, res) => {
         const formattedRouteNumber = String(routeNumber).toUpperCase();
 
         const insertData = {
-            route_name: routeName,
-            route_number: formattedRouteNumber,
+            routeName,
+            routeNumber: formattedRouteNumber,
             source: {
                 name: source.name,
-                coordinates: source.coordinates,
+                coordinates: { type: 'Point', coordinates: source.coordinates }
             },
             destination: {
                 name: destination.name,
-                coordinates: destination.coordinates,
+                coordinates: { type: 'Point', coordinates: destination.coordinates }
             },
-            stops: Array.isArray(stops) ? stops : [],
+            stops: Array.isArray(stops) ? stops.map(s => ({
+                name: s.name,
+                coordinates: { type: 'Point', coordinates: s.coordinates },
+                order: s.order
+            })) : [],
             distance: distance || 0,
-            is_active: true
+            isActive: true
         };
 
-        const { data, error } = await supabaseAdmin
-            .from('routes')
-            .insert([insertData])
-            .select()
-            .single();
-
-        if (error) {
-            if (error.code === '23505') {
-                return res.status(400).json({
-                    success: false,
-                    message: `Route number ${formattedRouteNumber} already exists`,
-                });
-            }
-            throw error;
+        const existingRoute = await Route.findOne({ routeNumber: formattedRouteNumber });
+        if (existingRoute) {
+             return res.status(400).json({
+                 success: false,
+                 message: `Route number ${formattedRouteNumber} already exists`,
+             });
         }
+
+        const data = await Route.create(insertData);
 
         res.status(201).json({
             success: true,
             message: 'Route created successfully',
-            data: {
-                ...data,
-                _id: data.id,
-                routeName: data.route_name,
-                routeNumber: data.route_number
-            },
+            data: data,
         });
     } catch (error) {
         console.error('Error creating route:', error);
@@ -175,8 +148,6 @@ exports.createRoute = async (req, res) => {
             success: false,
             message: 'Error creating route',
             error: error.message,
-            details: error.details,
-            hint: error.hint
         });
     }
 };
@@ -189,22 +160,33 @@ exports.createRoute = async (req, res) => {
 exports.updateRoute = async (req, res) => {
     try {
         const updateData = {};
-        if (req.body.routeName) updateData.route_name = req.body.routeName;
-        if (req.body.routeNumber) updateData.route_number = req.body.routeNumber.toUpperCase();
-        if (req.body.source) updateData.source = req.body.source;
-        if (req.body.destination) updateData.destination = req.body.destination;
-        if (req.body.stops) updateData.stops = req.body.stops;
+        if (req.body.routeName) updateData.routeName = req.body.routeName;
+        if (req.body.routeNumber) updateData.routeNumber = req.body.routeNumber.toUpperCase();
+        if (req.body.source) {
+             updateData.source = {
+                  name: req.body.source.name,
+                  coordinates: { type: 'Point', coordinates: req.body.source.coordinates }
+             }
+        }
+        if (req.body.destination) {
+             updateData.destination = {
+                  name: req.body.destination.name,
+                  coordinates: { type: 'Point', coordinates: req.body.destination.coordinates }
+             }
+        }
+        if (req.body.stops) {
+             updateData.stops = req.body.stops.map(s => ({
+                name: s.name,
+                coordinates: { type: 'Point', coordinates: s.coordinates },
+                order: s.order
+             }));
+        }
         if (req.body.distance !== undefined) updateData.distance = req.body.distance;
-        if (req.body.isActive !== undefined) updateData.is_active = req.body.isActive;
+        if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
 
-        const { data, error } = await supabaseAdmin
-            .from('routes')
-            .update(updateData)
-            .eq('id', req.params.id)
-            .select()
-            .single();
+        const data = await Route.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
 
-        if (error || !data) {
+        if (!data) {
             return res.status(404).json({
                 success: false,
                 message: 'Route not found',
@@ -214,12 +196,7 @@ exports.updateRoute = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Route updated successfully',
-            data: {
-                ...data,
-                _id: data.id,
-                routeName: data.route_name,
-                routeNumber: data.route_number
-            },
+            data: data,
         });
     } catch (error) {
         console.error('Error updating route:', error);
@@ -240,36 +217,21 @@ exports.deleteRoute = async (req, res) => {
     try {
         const routeId = req.params.id;
 
-        // 1. Hard delete the route (to free up the Serial ID/Route Number)
-        const { data, error } = await supabaseAdmin
-            .from('routes')
-            .delete()
-            .eq('id', routeId)
-            .select()
-            .single();
+        const data = await Route.findByIdAndDelete(routeId);
 
-        if (error || !data) {
+        if (!data) {
             return res.status(404).json({
                 success: false,
                 message: 'Route not found',
             });
         }
 
-        // 2. Unassign buses from this route using Admin client
-        await supabaseAdmin
-            .from('buses')
-            .update({ route_id: null, is_active: false })
-            .eq('route_id', routeId);
+        await Bus.updateMany({ routeId: routeId }, { routeId: null, isActive: false });
 
         res.status(200).json({
             success: true,
             message: 'Route decommissioned and assets released successfully. 🏁',
-            data: {
-                ...data,
-                _id: data.id,
-                routeName: data.route_name,
-                routeNumber: data.route_number
-            },
+            data: data,
         });
     } catch (error) {
         console.error('Error deleting route:', error);
@@ -298,34 +260,12 @@ exports.findNearbyRoutes = async (req, res) => {
             });
         }
 
-        // Supabase/PostGIS query for nearby
-        // Assuming PostGIS is enabled and you have a function or use ST_Distance
-        // For simplicity, we'll fetch active ones and filter in memory if PostGIS isn't set up
-        // But better to use RPC if possible. Let's do fetch and filter as fallback.
-        const { data, error } = await supabase
-            .from('routes')
-            .select('*')
-            .eq('is_active', true);
-
-        if (error) throw error;
-
-        // Simple haversine filter
-        const radius = parseFloat(maxDistance) || 5000;
-        const routes = data.filter(route => {
-            if (!route.source || !route.source.coordinates) return false;
-            // Haversine calculation... omitted for brevity, just return all for now or do simple box
-            return true;
-        }).map(r => ({
-            ...r,
-            _id: r.id,
-            routeName: r.route_name,
-            routeNumber: r.route_number
-        }));
+        const data = await Route.findNearbyRoutes(Number(lng), Number(lat), Number(maxDistance) || 5000);
 
         res.status(200).json({
             success: true,
-            count: routes.length,
-            data: routes,
+            count: data.length,
+            data: data,
         });
     } catch (error) {
         console.error('Error finding nearby routes:', error);

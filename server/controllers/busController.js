@@ -1,4 +1,5 @@
-const { supabase, supabaseAdmin } = require('../config/database');
+const Bus = require('../models/Bus');
+const Route = require('../models/Route');
 
 /**
  * @desc    Get all buses or filter by active status
@@ -9,37 +10,22 @@ const { supabase, supabaseAdmin } = require('../config/database');
 exports.getAllBuses = async (req, res) => {
     try {
         const { active, routeId } = req.query;
-
-        let query = supabase.from('buses').select('*, routes(*)');
+        let query = {};
 
         if (active !== undefined) {
-            query = query.eq('is_active', active === 'true');
+            query.isActive = active === 'true';
         }
 
         if (routeId) {
-            query = query.eq('route_id', routeId);
+            query.routeId = routeId;
         }
 
-        const { data, error } = await query.order('bus_number', { ascending: true });
-
-        if (error) throw error;
-
-        // Map for frontend compatibility
-        const buses = data.map(bus => ({
-            ...bus,
-            _id: bus.id,
-            routeId: bus.routes ? {
-                ...bus.routes,
-                _id: bus.routes.id,
-                routeName: bus.routes.route_name,
-                routeNumber: bus.routes.route_number
-            } : null
-        }));
+        const data = await Bus.find(query).populate('routeId').sort('busNumber');
 
         res.status(200).json({
             success: true,
-            count: buses.length,
-            data: buses,
+            count: data.length,
+            data: data,
         });
     } catch (error) {
         console.error('Error fetching buses:', error);
@@ -58,29 +44,14 @@ exports.getAllBuses = async (req, res) => {
  */
 exports.getBusByNumber = async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('buses')
-            .select('*, routes(*)')
-            .eq('bus_number', req.params.busNumber.toUpperCase())
-            .single();
+        const bus = await Bus.findOne({ busNumber: req.params.busNumber.toUpperCase() }).populate('routeId');
 
-        if (error || !data) {
+        if (!bus) {
             return res.status(404).json({
                 success: false,
                 message: 'Bus not found',
             });
         }
-
-        const bus = {
-            ...data,
-            _id: data.id,
-            routeId: data.routes ? {
-                ...data.routes,
-                _id: data.routes.id,
-                routeName: data.routes.route_name,
-                routeNumber: data.routes.route_number
-            } : null
-        };
 
         res.status(200).json({
             success: true,
@@ -114,33 +85,25 @@ exports.createBus = async (req, res) => {
 
         const formattedBusNumber = busNumber.toUpperCase();
 
-        const { data, error } = await supabaseAdmin
-            .from('buses')
-            .insert([
-                {
-                    bus_number: formattedBusNumber,
-                    route_id: routeId || null,
-                    driver_info: driverInfo || {},
-                    is_active: false
-                },
-            ])
-            .select()
-            .single();
-
-        if (error) {
-            if (error.code === '23505') {
-                return res.status(400).json({
-                    success: false,
-                    message: `Bus number ${formattedBusNumber} already exists`,
-                });
-            }
-            throw error;
+        const existingBus = await Bus.findOne({ busNumber: formattedBusNumber });
+        if (existingBus) {
+             return res.status(400).json({
+                 success: false,
+                 message: `Bus number ${formattedBusNumber} already exists`,
+             });
         }
+
+        const bus = await Bus.create({
+            busNumber: formattedBusNumber,
+            routeId: routeId || null,
+            driverInfo: driverInfo || {},
+            isActive: false
+        });
 
         res.status(201).json({
             success: true,
             message: 'Bus registered successfully',
-            data: { ...data, _id: data.id },
+            data: bus,
         });
     } catch (error) {
         console.error('Error creating bus:', error);
@@ -148,8 +111,6 @@ exports.createBus = async (req, res) => {
             success: false,
             message: 'Error creating bus',
             error: error.message,
-            details: error.details,
-            hint: error.hint
         });
     }
 };
@@ -170,19 +131,18 @@ exports.updateBusLocation = async (req, res) => {
             });
         }
 
-        const { data, error } = await supabaseAdmin
-            .from('buses')
-            .update({
-                current_location: { coordinates: [longitude, latitude] },
-                speed: speed || 0,
-                heading: heading || 0,
-                last_updated: new Date().toISOString()
-            })
-            .eq('bus_number', req.params.busNumber.toUpperCase())
-            .select()
-            .single();
+        const bus = await Bus.findOneAndUpdate(
+             { busNumber: req.params.busNumber.toUpperCase() },
+             {
+                 currentLocation: { type: 'Point', coordinates: [longitude, latitude] },
+                 speed: speed || 0,
+                 heading: heading || 0,
+                 lastUpdated: Date.now()
+             },
+             { new: true }
+        );
 
-        if (error || !data) {
+        if (!bus) {
             return res.status(404).json({
                 success: false,
                 message: 'Bus not found',
@@ -192,7 +152,7 @@ exports.updateBusLocation = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Bus location updated successfully',
-            data: { ...data, _id: data.id },
+            data: bus,
         });
     } catch (error) {
         console.error('Error updating bus location:', error);
@@ -220,18 +180,17 @@ exports.startBusJourney = async (req, res) => {
             });
         }
 
-        const { data, error } = await supabaseAdmin
-            .from('buses')
-            .update({
-                route_id: routeId,
-                is_active: true,
-                last_updated: new Date().toISOString()
-            })
-            .eq('bus_number', req.params.busNumber.toUpperCase())
-            .select()
-            .single();
+        const bus = await Bus.findOneAndUpdate(
+             { busNumber: req.params.busNumber.toUpperCase() },
+             {
+                 routeId: routeId,
+                 isActive: true,
+                 lastUpdated: Date.now()
+             },
+             { new: true }
+        );
 
-        if (error || !data) {
+        if (!bus) {
             return res.status(404).json({
                 success: false,
                 message: 'Bus not found or error starting journey',
@@ -241,7 +200,7 @@ exports.startBusJourney = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Journey started successfully',
-            data: { ...data, _id: data.id },
+            data: bus,
         });
     } catch (error) {
         console.error('Error starting bus journey:', error);
@@ -260,17 +219,16 @@ exports.startBusJourney = async (req, res) => {
  */
 exports.stopBusJourney = async (req, res) => {
     try {
-        const { data, error } = await supabaseAdmin
-            .from('buses')
-            .update({
-                is_active: false,
-                last_updated: new Date().toISOString()
-            })
-            .eq('bus_number', req.params.busNumber.toUpperCase())
-            .select()
-            .single();
+        const bus = await Bus.findOneAndUpdate(
+             { busNumber: req.params.busNumber.toUpperCase() },
+             {
+                 isActive: false,
+                 lastUpdated: Date.now()
+             },
+             { new: true }
+        );
 
-        if (error || !data) {
+        if (!bus) {
             return res.status(404).json({
                 success: false,
                 message: 'Bus not found',
@@ -280,7 +238,7 @@ exports.stopBusJourney = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Journey stopped successfully',
-            data: { ...data, _id: data.id },
+            data: bus,
         });
     } catch (error) {
         console.error('Error stopping bus journey:', error);
@@ -309,24 +267,8 @@ exports.findNearbyBuses = async (req, res) => {
             });
         }
 
-        const { data, error } = await supabase
-            .from('buses')
-            .select('*, routes(*)')
-            .eq('is_active', true);
-
-        if (error) throw error;
-
-        // Fallback filter
-        const buses = data.map(bus => ({
-            ...bus,
-            _id: bus.id,
-            routeId: bus.routes ? {
-                ...bus.routes,
-                _id: bus.routes.id,
-                routeName: bus.routes.route_name,
-                routeNumber: bus.routes.route_number
-            } : null
-        }));
+        // Just fetching all active buses for now. If geospatial queries needed, use Bus.find() with $near
+        const buses = await Bus.find({ isActive: true }).populate('routeId');
 
         res.status(200).json({
             success: true,

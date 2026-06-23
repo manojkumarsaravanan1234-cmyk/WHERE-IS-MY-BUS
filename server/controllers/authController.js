@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { supabase, supabaseAdmin } = require('../config/database');
+const User = require('../models/User');
 
 /**
  * @desc    Login for all roles
@@ -32,21 +32,11 @@ exports.login = async (req, res) => {
             });
         }
 
-        // 2. Check Supabase 'users' table (for Users and Drivers)
-        const { data: user, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('email', email)
-            .single();
+        // 2. Check MongoDB 'users' collection
+        const user = await User.findOne({ email });
 
-        if (error) {
-            if (error.code === 'PGRST116') { // Not found
-                return res.status(401).json({ success: false, message: 'Invalid credentials' });
-            }
-            if (error.code === '42P01' || error.message.includes('not found')) {
-                return res.status(500).json({ success: false, message: 'Database Setup Error: "users" table is missing in Supabase.' });
-            }
-            throw error;
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -55,7 +45,7 @@ exports.login = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user.id, role: user.role },
+            { id: user._id, role: user.role },
             process.env.JWT_SECRET || 'secret',
             { expiresIn: '24h' }
         );
@@ -63,7 +53,7 @@ exports.login = async (req, res) => {
         res.status(200).json({
             success: true,
             token,
-            user: { id: user.id, name: user.name, email: user.email, role: user.role }
+            user: { id: user._id, name: user.name, email: user.email, role: user.role }
         });
 
     } catch (error) {
@@ -85,25 +75,23 @@ exports.signup = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
         }
 
+        let user = await User.findOne({ email });
+        if (user) {
+            return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
+
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        const { data, error } = await supabaseAdmin
-            .from('users')
-            .insert([{ name, email, password: hashedPassword, role: role || 'user' }])
-            .select()
-            .single();
-
-        if (error) {
-            if (error.code === '23505') return res.status(400).json({ success: false, message: 'Email already exists' });
-            if (error.code === '42P01' || error.message.includes('not found')) {
-                return res.status(500).json({ success: false, message: 'Database Setup Error: "users" table is missing. Please create it in Supabase dashboard.' });
-            }
-            throw error;
-        }
+        user = await User.create({
+            name,
+            email,
+            password: hashedPassword,
+            role: role || 'user'
+        });
 
         const token = jwt.sign(
-            { id: data.id, role: data.role },
+            { id: user._id, role: user.role },
             process.env.JWT_SECRET || 'secret',
             { expiresIn: '24h' }
         );
@@ -111,7 +99,7 @@ exports.signup = async (req, res) => {
         res.status(201).json({
             success: true,
             token,
-            user: { id: data.id, name: data.name, email: data.email, role: data.role }
+            user: { id: user._id, name: user.name, email: user.email, role: user.role }
         });
 
     } catch (error) {

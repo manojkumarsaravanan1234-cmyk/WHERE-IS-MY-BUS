@@ -24,6 +24,28 @@ const Home = () => {
         }
     };
 
+    const handleRouteClick = (route) => {
+        try {
+            const sourceCoords = route.source?.coordinates?.coordinates || route.source?.coordinates;
+            const destCoords = route.destination?.coordinates?.coordinates || route.destination?.coordinates;
+            
+            if (sourceCoords && destCoords && sourceCoords.length >= 2 && destCoords.length >= 2) {
+                const slng = sourceCoords[0];
+                const slat = sourceCoords[1];
+                const dlng = destCoords[0];
+                const dlat = destCoords[1];
+                
+                const mapUrl = `https://www.google.com/maps/dir/?api=1&origin=${slat},${slng}&destination=${dlat},${dlng}`;
+                window.open(mapUrl, '_blank');
+            } else {
+                navigate(`/track/${route._id}`);
+            }
+        } catch (error) {
+            console.error("Error opening map:", error);
+            navigate(`/track/${route._id}`);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-slate-950 text-white relative overflow-hidden">
             {/* Animated Background Elements */}
@@ -73,8 +95,9 @@ const Home = () => {
                                                         const { latitude, longitude } = pos.coords;
                                                         setSource(`My Location`);
                                                         try {
-                                                            const response = await routeAPI.findNearbyRoutes(longitude, latitude);
-                                                            setResults(response.data);
+                                                            // As requested: Fetch all available routes instead of just nearby
+                                                            const response = await routeAPI.getRoutes({});
+                                                            setResults(response.data || response); // Handle array or {data: ...} formats
                                                             setSearched(true);
                                                         } catch (err) {
                                                             console.error(err);
@@ -142,7 +165,7 @@ const Home = () => {
                                 results.map((route) => (
                                     <div
                                         key={route._id}
-                                        onClick={() => navigate(`/track/${route._id}`)}
+                                        onClick={() => handleRouteClick(route)}
                                         className="glass-card p-8 cursor-pointer group relative overflow-hidden"
                                     >
                                         <div className="absolute top-0 right-0 p-4">

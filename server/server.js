@@ -23,8 +23,8 @@ const io = new Server(server, {
     transports: ['websocket', 'polling'],
 });
 
-// Initialize Supabase
-connectDB().catch(err => console.error('Supabase Init Error:', err));
+// Initialize Database
+connectDB().catch(err => console.error('Database Init Error:', err));
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false })); // Permissive CSP for development

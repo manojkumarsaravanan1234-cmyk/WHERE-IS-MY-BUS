@@ -1,4 +1,5 @@
-const { supabase } = require('../config/database');
+const Bus = require('../models/Bus');
+const Route = require('../models/Route');
 
 /**
  * Socket.io Event Handlers
@@ -29,43 +30,27 @@ module.exports = (io) => {
                 console.log(`🚌 Driver starting journey: Bus ${formattedBusNumber} on route ${routeId}`);
 
                 // Update or Insert bus
-                const { data: busData, error: findError } = await supabase
-                    .from('buses')
-                    .select('*')
-                    .eq('bus_number', formattedBusNumber)
-                    .single();
+                let bus = await Bus.findOne({ busNumber: formattedBusNumber });
 
-                let result;
-                if (!busData) {
-                    const { data: insertData, error: insertError } = await supabase
-                        .from('buses')
-                        .insert([
-                            {
-                                bus_number: formattedBusNumber,
-                                route_id: routeId,
-                                is_active: true,
-                                driver_info: { name: driverName, phone: driverPhone, socketId: socket.id },
-                                last_updated: new Date().toISOString()
-                            }
-                        ])
-                        .select()
-                        .single();
-                    if (insertError) throw insertError;
-                    result = insertData;
+                if (!bus) {
+                    bus = await Bus.create({
+                        busNumber: formattedBusNumber,
+                        routeId: routeId,
+                        isActive: true,
+                        driverInfo: { name: driverName, phone: driverPhone, socketId: socket.id },
+                        lastUpdated: Date.now()
+                    });
                 } else {
-                    const { data: updateData, error: updateError } = await supabase
-                        .from('buses')
-                        .update({
-                            route_id: routeId,
-                            is_active: true,
-                            driver_info: { ...busData.driver_info, name: driverName, phone: driverPhone, socketId: socket.id },
-                            last_updated: new Date().toISOString()
-                        })
-                        .eq('bus_number', formattedBusNumber)
-                        .select()
-                        .single();
-                    if (updateError) throw updateError;
-                    result = updateData;
+                    bus = await Bus.findOneAndUpdate(
+                        { busNumber: formattedBusNumber },
+                        {
+                            routeId: routeId,
+                            isActive: true,
+                            driverInfo: { ...bus.driverInfo, name: driverName, phone: driverPhone, socketId: socket.id },
+                            lastUpdated: Date.now()
+                        },
+                        { new: true }
+                    );
                 }
 
                 // Store active driver
@@ -110,33 +95,31 @@ module.exports = (io) => {
 
                 console.log(`📍 Location update: Bus ${formattedBusNumber} at [${longitude}, ${latitude}]`);
 
-                // Update in Supabase
-                const { data: bus, error } = await supabase
-                    .from('buses')
-                    .update({
-                        current_location: { coordinates: [longitude, latitude], type: 'Point' },
+                // Update in MongoDB
+                const bus = await Bus.findOneAndUpdate(
+                    { busNumber: formattedBusNumber },
+                    {
+                        currentLocation: { coordinates: [longitude, latitude], type: 'Point' },
                         speed: speed || 0,
                         heading: heading || 0,
-                        last_updated: new Date().toISOString()
-                    })
-                    .eq('bus_number', formattedBusNumber)
-                    .select('*, routes(*)')
-                    .single();
+                        lastUpdated: Date.now()
+                    },
+                    { new: true }
+                ).populate('routeId');
 
-                if (error || !bus) {
-                    if (error) console.error('❌ DB Update Error during location update:', error.message);
+                if (!bus) {
+                    console.error('❌ DB Update Error during location update: Bus not found');
                     return;
                 }
 
                 // Calculate Next Stop if route has stops
                 let nextStop = null;
-                if (bus.routes && Array.isArray(bus.routes.stops) && bus.routes.stops.length > 0) {
+                if (bus.routeId && Array.isArray(bus.routeId.stops) && bus.routeId.stops.length > 0) {
                     let minDistance = Infinity;
                     let closestStop = null;
 
-                    bus.routes.stops.forEach(stop => {
-                        // Support both GeoJSON object and flat array
-                        const stopCoords = stop.coordinates?.coordinates || stop.coordinates;
+                    bus.routeId.stops.forEach(stop => {
+                        const stopCoords = stop.coordinates?.coordinates;
                         if (Array.isArray(stopCoords) && stopCoords.length >= 2) {
                             const dist = calculateDistance(latitude, longitude, stopCoords[1], stopCoords[0]);
                             if (dist < minDistance) {
@@ -155,14 +138,14 @@ module.exports = (io) => {
                     speed: Math.round(speed || 0),
                     heading: heading || 0,
                     timestamp: Date.now(),
-                    routeId: bus.route_id,
-                    routeName: bus.routes?.route_name,
+                    routeId: bus.routeId?._id,
+                    routeName: bus.routeId?.routeName,
                     nextStop: nextStop
                 };
 
                 // Broadcast
-                if (bus.route_id) {
-                    io.to(`route:${bus.route_id}`).emit('bus:locationUpdate', locationUpdate);
+                if (bus.routeId) {
+                    io.to(`route:${bus.routeId._id}`).emit('bus:locationUpdate', locationUpdate);
                 }
                 io.to(`bus:${formattedBusNumber}`).emit('bus:locationUpdate', locationUpdate);
 
@@ -179,22 +162,21 @@ module.exports = (io) => {
                 const { busNumber } = data;
                 const formattedBusNumber = busNumber.toUpperCase();
 
-                const { data: bus, error } = await supabase
-                    .from('buses')
-                    .update({ is_active: false, last_updated: new Date().toISOString() })
-                    .eq('bus_number', formattedBusNumber)
-                    .select()
-                    .single();
+                const bus = await Bus.findOneAndUpdate(
+                    { busNumber: formattedBusNumber },
+                    { isActive: false, lastUpdated: Date.now() },
+                    { new: true }
+                );
 
-                if (error || !bus) return;
+                if (!bus) return;
 
                 activeDrivers.delete(formattedBusNumber);
                 socket.leave(`bus:${formattedBusNumber}`);
-                if (bus.route_id) {
-                    socket.leave(`route:${bus.route_id}`);
-                    io.to(`route:${bus.route_id}`).emit('bus:left', {
+                if (bus.routeId) {
+                    socket.leave(`route:${bus.routeId}`);
+                    io.to(`route:${bus.routeId}`).emit('bus:left', {
                         busNumber: formattedBusNumber,
-                        routeId: bus.route_id,
+                        routeId: bus.routeId,
                         timestamp: Date.now(),
                     });
                 }
@@ -214,22 +196,16 @@ module.exports = (io) => {
                 socket.join(`route:${routeId}`);
                 activeUsers.set(socket.id, { routeId, userId });
 
-                const { data: buses, error } = await supabase
-                    .from('buses')
-                    .select('*')
-                    .eq('route_id', routeId)
-                    .eq('is_active', true);
-
-                if (error) throw error;
+                const buses = await Bus.find({ routeId: routeId, isActive: true });
 
                 socket.emit('route:activeBuses', {
                     routeId,
                     buses: buses.map(bus => ({
-                        busNumber: bus.bus_number,
-                        location: bus.current_location,
+                        busNumber: bus.busNumber,
+                        location: bus.currentLocation,
                         speed: bus.speed,
                         heading: bus.heading,
-                        lastUpdated: bus.last_updated,
+                        lastUpdated: bus.lastUpdated,
                     })),
                 });
             } catch (error) {
@@ -248,10 +224,10 @@ module.exports = (io) => {
         socket.on('disconnect', async () => {
             for (const [busNumber, socketId] of activeDrivers.entries()) {
                 if (socketId === socket.id) {
-                    await supabase
-                        .from('buses')
-                        .update({ is_active: false, last_updated: new Date().toISOString() })
-                        .eq('bus_number', busNumber);
+                    await Bus.findOneAndUpdate(
+                        { busNumber: busNumber },
+                        { isActive: false, lastUpdated: Date.now() }
+                    );
                     activeDrivers.delete(busNumber);
                     break;
                 }
@@ -262,11 +238,11 @@ module.exports = (io) => {
 
     // Simple cleanup every 5 mins
     setInterval(async () => {
-        const staleTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        await supabase
-            .from('buses')
-            .update({ is_active: false })
-            .lt('last_updated', staleTime);
+        const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+        await Bus.updateMany(
+            { lastUpdated: { $lt: staleTime } },
+            { isActive: false }
+        );
     }, 5 * 60 * 1000);
 };
 
